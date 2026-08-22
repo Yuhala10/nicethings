@@ -1,4 +1,3 @@
-import fs from "fs";
 import path from "path";
 import formidable from "formidable";
 
@@ -24,7 +23,11 @@ function parseForm(req) {
 
             form.parse(
                 req,
-                (error, fields, files) => {
+                (
+                    error,
+                    fields,
+                    files
+                ) => {
                     if (error) {
                         reject(
                             error
@@ -42,13 +45,9 @@ function parseForm(req) {
     );
 }
 
-function getField(
-    value
-) {
+function getField(value) {
     if (
-        Array.isArray(
-            value
-        )
+        Array.isArray(value)
     ) {
         return value[0];
     }
@@ -56,25 +55,66 @@ function getField(
     return value;
 }
 
-function getFile(
-    value
-) {
+function getFile(value) {
     if (
-        Array.isArray(
-            value
-        )
+        Array.isArray(value)
     ) {
         return value[0];
     }
 
     return value;
+}
+
+async function readUploadedFile(
+    filepath
+) {
+    /*
+     * Import Node's filesystem module
+     * at runtime so Turbopack does not
+     * statically trace arbitrary filesystem
+     * access from this API route.
+     */
+    const {
+        readFile,
+    } = await import(
+        "node:fs/promises"
+    );
+
+    return readFile(
+        filepath
+    );
+}
+
+async function removeUploadedFile(
+    filepath
+) {
+    try {
+        const {
+            unlink,
+        } = await import(
+            "node:fs/promises"
+        );
+
+        await unlink(
+            filepath
+        );
+    } catch {
+        /*
+         * Temporary-file cleanup failure
+         * should never turn a successful
+         * request into an error.
+         */
+    }
 }
 
 export default async function handler(
     req,
     res
 ) {
-    if (req.method !== "POST") {
+    if (
+        req.method !==
+        "POST"
+    ) {
         return res.status(405).json({
             error:
                 "Method not allowed.",
@@ -149,7 +189,6 @@ export default async function handler(
          * Verify that the payment belongs
          * to this visitor and is still pending.
          */
-
         const {
             data: payment,
             error: paymentError,
@@ -200,17 +239,15 @@ export default async function handler(
         }
 
         /*
-         * Create a private storage path.
+         * Determine a safe extension.
          */
-
         const extension =
             path
                 .extname(
                     proof.originalFilename ||
                     ""
                 )
-                .toLowerCase() ||
-            ".jpg";
+                .toLowerCase();
 
         const safeExtension =
             [
@@ -227,16 +264,18 @@ export default async function handler(
         const storagePath =
             `${visitorId}/${paymentId}${safeExtension}`;
 
+        /*
+         * Read the temporary upload.
+         */
         const fileBuffer =
-            await fs.promises.readFile(
+            await readUploadedFile(
                 uploadedPath
             );
 
         /*
-         * Upload to the PRIVATE
-         * payment-proofs bucket.
+         * Upload directly into the
+         * PRIVATE Supabase Storage bucket.
          */
-
         const {
             error: uploadError,
         } =
@@ -251,8 +290,8 @@ export default async function handler(
                         contentType:
                             proof.mimetype ||
                             "image/jpeg",
-                        upsert:
-                            true,
+
+                        upsert: true,
                     }
                 );
 
@@ -269,10 +308,14 @@ export default async function handler(
         }
 
         /*
-         * Store only the private storage path
-         * in the database.
+         * Store ONLY the private storage path.
+         *
+         * Do not store a public URL.
+         *
+         * Do not include updated_at because
+         * nt_payment_requests does not have
+         * that column in the current schema.
          */
-
         const {
             error: updateError,
         } =
@@ -283,8 +326,6 @@ export default async function handler(
                 .update({
                     proof_url:
                         storagePath,
-                    updated_at:
-                        new Date().toISOString(),
                 })
                 .eq(
                     "id",
@@ -300,6 +341,19 @@ export default async function handler(
                 "Proof database update error:",
                 updateError
             );
+
+            /*
+             * Best-effort cleanup of the
+             * Supabase object if the database
+             * update fails.
+             */
+            await supabaseAdmin.storage
+                .from(
+                    "nt-payment-proofs"
+                )
+                .remove([
+                    storagePath,
+                ]);
 
             return res.status(500).json({
                 error:
@@ -327,14 +381,9 @@ export default async function handler(
         if (
             uploadedPath
         ) {
-            try {
-                await fs.promises.unlink(
-                    uploadedPath
-                );
-            } catch {
-                // Temporary file cleanup failure
-                // does not affect the response.
-            }
+            await removeUploadedFile(
+                uploadedPath
+            );
         }
     }
 }
