@@ -1,4 +1,5 @@
 import { useState } from "react";
+
 import {
     ArrowLeft,
     Check,
@@ -8,10 +9,21 @@ import {
 } from "lucide-react";
 
 import AppShell from "../components/layout/AppShell";
+import { useLanguage } from "../lib/i18n";
+import { NICE_THINGS } from "../lib/constants";
+
 
 export default function IntroducePage() {
-    const [language, setLanguage] =
-        useState("en");
+    const {
+        language,
+        setLanguage,
+        t,
+    } = useLanguage();
+
+
+    /* =====================================================
+       FORM
+    ====================================================== */
 
     const [form, setForm] =
         useState({
@@ -20,13 +32,16 @@ export default function IntroducePage() {
             description: "",
             address: "",
             neighborhood: "",
-            city: "Yaoundé",
+            city:
+                NICE_THINGS.defaultCity ||
+                "Yaoundé",
             phone: "",
             whatsapp: "",
             estimatedPrice: "",
             submittedByName: "",
             submittedByPhone: "",
         });
+
 
     const [loading, setLoading] =
         useState(false);
@@ -37,21 +52,56 @@ export default function IntroducePage() {
     const [error, setError] =
         useState("");
 
-    const french =
-        language === "fr";
+
+    /* =====================================================
+       UPDATE FORM
+    ====================================================== */
 
     function update(
         field,
         value
     ) {
         setForm(
-            (current) => ({
+            current => ({
                 ...current,
-                [field]:
-                    value,
+                [field]: value,
             })
         );
     }
+
+
+    /* =====================================================
+       CATEGORY NAME
+    ====================================================== */
+
+    function getCategoryName(
+        category
+    ) {
+        if (!category) {
+            return "";
+        }
+
+        if (
+            language === "fr"
+        ) {
+            return (
+                category.fr ||
+                category.en ||
+                category.id
+            );
+        }
+
+        return (
+            category.en ||
+            category.fr ||
+            category.id
+        );
+    }
+
+
+    /* =====================================================
+       SUBMIT
+    ====================================================== */
 
     async function submit(
         event
@@ -60,101 +110,199 @@ export default function IntroducePage() {
 
         setError("");
 
+
         if (
             !form.name.trim() ||
             !form.address.trim()
         ) {
             setError(
-                french
-                    ? "Le nom et l'emplacement sont nécessaires."
-                    : "The name and location are required."
+                t(
+                    "introduceRequired"
+                )
             );
 
             return;
         }
 
-        setLoading(true);
 
-        try {
-            const visitorId =
+        let visitorId =
+            null;
+
+
+        if (
+            typeof window !==
+            "undefined"
+        ) {
+            visitorId =
                 localStorage.getItem(
                     "nicethings_visitor_id"
                 );
+        }
 
+
+        setLoading(true);
+
+
+        try {
             const response =
                 await fetch(
                     "/api/spots/introduce",
                     {
-                        method: "POST",
+                        method:
+                            "POST",
+
                         headers: {
                             "Content-Type":
                                 "application/json",
                         },
-                        body: JSON.stringify({
-                            visitorId,
-                            ...form,
-                        }),
+
+                        body:
+                            JSON.stringify({
+                                visitorId,
+                                ...form,
+
+                                name:
+                                    form.name.trim(),
+
+                                category:
+                                    form.category ||
+                                    null,
+
+                                description:
+                                    form.description.trim() ||
+                                    null,
+
+                                address:
+                                    form.address.trim(),
+
+                                neighborhood:
+                                    form.neighborhood.trim() ||
+                                    null,
+
+                                city:
+                                    form.city.trim() ||
+                                    NICE_THINGS.defaultCity ||
+                                    "Yaoundé",
+
+                                phone:
+                                    form.phone.trim() ||
+                                    null,
+
+                                whatsapp:
+                                    form.whatsapp.trim() ||
+                                    null,
+
+                                estimatedPrice:
+                                    form.estimatedPrice
+                                        ? Number(
+                                            form.estimatedPrice
+                                        )
+                                        : null,
+
+                                submittedByName:
+                                    form.submittedByName.trim() ||
+                                    null,
+
+                                submittedByPhone:
+                                    form.submittedByPhone.trim() ||
+                                    null,
+                            }),
                     }
                 );
 
-            const data =
-                await response.json();
 
-            if (!response.ok) {
+            let data = {};
+
+            try {
+                data =
+                    await response.json();
+            } catch {
+                data = {};
+            }
+
+
+            if (
+                !response.ok
+            ) {
                 throw new Error(
                     data.error ||
-                    "Submission failed."
+                    t(
+                        "introduceError"
+                    )
                 );
             }
+
 
             setSubmitted(
                 true
             );
-        } catch (error) {
+        } catch (
+        submitError
+        ) {
             console.error(
-                error
+                "NiceThings introduce error:",
+                submitError
             );
 
             setError(
-                error.message ||
-                (
-                    french
-                        ? "Impossible d'envoyer ce spot."
-                        : "Unable to submit this spot."
+                submitError.message ||
+                t(
+                    "introduceError"
                 )
             );
         } finally {
-            setLoading(false);
+            setLoading(
+                false
+            );
         }
     }
 
-    if (submitted) {
+
+    /* =====================================================
+       SUCCESS
+    ====================================================== */
+
+    if (
+        submitted
+    ) {
         return (
             <AppShell>
-                <main className="nt-introduce-page">
-                    <div className="nt-introduce-success">
 
-                        <div className="nt-success-icon">
+                <main
+                    className="nt-introduce-page"
+                >
+
+                    <div
+                        className="nt-introduce-success"
+                    >
+
+                        <div
+                            className="nt-success-icon"
+                        >
                             <Check
                                 size={30}
                             />
                         </div>
 
+
                         <Sparkles
                             size={17}
                         />
 
+
                         <h1>
-                            {french
-                                ? "Merci pour cette belle découverte."
-                                : "Thank you for sharing a great discovery."}
+                            {t(
+                                "introduceSuccessTitle"
+                            )}
                         </h1>
 
+
                         <p>
-                            {french
-                                ? "Notre équipe va vérifier les informations avant de publier le spot."
-                                : "Our team will verify the information before publishing the spot."}
+                            {t(
+                                "introduceSuccessDescription"
+                            )}
                         </p>
+
 
                         <button
                             type="button"
@@ -164,24 +312,42 @@ export default function IntroducePage() {
                                 "/"
                             }
                         >
-                            {french
-                                ? "Retour à NiceThings"
-                                : "Back to NiceThings"}
+                            {t(
+                                "backToNiceThings"
+                            )}
                         </button>
 
                     </div>
+
                 </main>
+
             </AppShell>
         );
     }
 
+
+    /* =====================================================
+       PAGE
+    ====================================================== */
+
     return (
         <AppShell>
-            <main className="nt-introduce-page">
 
-                <div className="nt-introduce-shell">
+            <main
+                className="nt-introduce-page"
+            >
 
-                    <header className="nt-introduce-header">
+                <div
+                    className="nt-introduce-shell"
+                >
+
+                    {/* =================================================
+                        HEADER
+                    ================================================== */}
+
+                    <header
+                        className="nt-introduce-header"
+                    >
 
                         <button
                             type="button"
@@ -189,24 +355,33 @@ export default function IntroducePage() {
                                 window.history.back()
                             }
                         >
+
                             <ArrowLeft
                                 size={17}
                             />
 
-                            {french
-                                ? "Retour"
-                                : "Back"}
+                            {t(
+                                "back"
+                            )}
+
                         </button>
 
+
                         <div>
+
                             <Sparkles
                                 size={16}
                             />
 
                             NiceThings
+
                         </div>
 
-                        <div className="nt-language-switch">
+
+                        <div
+                            className="nt-language-switch"
+                        >
+
                             <button
                                 type="button"
                                 className={
@@ -219,11 +394,16 @@ export default function IntroducePage() {
                                     setLanguage(
                                         "en"
                                     )
+                                }
+                                aria-pressed={
+                                    language ===
+                                    "en"
                                 }
                             >
                                 EN
                             </button>
 
+
                             <button
                                 type="button"
                                 className={
@@ -237,38 +417,61 @@ export default function IntroducePage() {
                                         "fr"
                                     )
                                 }
+                                aria-pressed={
+                                    language ===
+                                    "fr"
+                                }
                             >
                                 FR
                             </button>
+
                         </div>
 
                     </header>
 
-                    <section className="nt-introduce-hero">
 
-                        <div className="nt-introduce-eyebrow">
+                    {/* =================================================
+                        HERO
+                    ================================================== */}
+
+                    <section
+                        className="nt-introduce-hero"
+                    >
+
+                        <div
+                            className="nt-introduce-eyebrow"
+                        >
+
                             <MapPin
                                 size={13}
                             />
 
-                            {french
-                                ? "Partager une découverte"
-                                : "Share a discovery"}
+                            {t(
+                                "introduceEyebrow"
+                            )}
+
                         </div>
 
+
                         <h1>
-                            {french
-                                ? "Vous connaissez un endroit qui mérite d'être découvert ?"
-                                : "Know a place worth discovering?"}
+                            {t(
+                                "introduceTitle"
+                            )}
                         </h1>
 
+
                         <p>
-                            {french
-                                ? "Présentez-le à NiceThings. Nous vérifierons les informations avant de le rendre visible."
-                                : "Introduce it to NiceThings. We'll verify the information before making it visible."}
+                            {t(
+                                "introduceDescription"
+                            )}
                         </p>
 
                     </section>
+
+
+                    {/* =================================================
+                        FORM
+                    ================================================== */}
 
                     <form
                         className="nt-introduce-form"
@@ -277,214 +480,346 @@ export default function IntroducePage() {
                         }
                     >
 
+                        {/* =================================================
+                            NAME
+                        ================================================== */}
+
                         <FormInput
-                            label={
-                                french
-                                    ? "Nom du spot"
-                                    : "Spot name"
-                            }
+                            label={t(
+                                "spotName"
+                            )}
                             required
                             value={
                                 form.name
                             }
-                            onChange={(value) =>
+                            onChange={value =>
                                 update(
                                     "name",
                                     value
                                 )
                             }
-                            placeholder={
-                                french
-                                    ? "Ex. Chez Mama"
-                                    : "e.g. Chez Mama"
-                            }
+                            placeholder={t(
+                                "spotNamePlaceholder"
+                            )}
                         />
 
-                        <FormInput
-                            label={
-                                french
-                                    ? "Catégorie"
-                                    : "Category"
-                            }
-                            value={
-                                form.category
-                            }
-                            onChange={(value) =>
-                                update(
-                                    "category",
-                                    value
-                                )
-                            }
-                            placeholder={
-                                french
-                                    ? "Restaurant, grill, café..."
-                                    : "Restaurant, grill, café..."
-                            }
-                        />
+
+                        {/* =================================================
+                            CATEGORY
+                        ================================================== */}
+
+                        <div
+                            className="nt-introduce-category-field"
+                        >
+
+                            <label>
+                                {t(
+                                    "category"
+                                )}
+                            </label>
+
+
+                            <p
+                                style={{
+                                    margin:
+                                        "4px 0 12px",
+                                    color:
+                                        "var(--nt-muted)",
+                                    fontSize:
+                                        "0.78rem",
+                                }}
+                            >
+                                {t(
+                                    "introduceCategoryHelp"
+                                )}
+                            </p>
+
+
+                            <div
+                                className="nt-category-grid"
+                            >
+
+                                {NICE_THINGS.categories.map(
+                                    item => {
+
+                                        const selected =
+                                            form.category ===
+                                            item.id;
+
+
+                                        return (
+                                            <button
+                                                key={
+                                                    item.id
+                                                }
+                                                type="button"
+                                                className={
+                                                    selected
+                                                        ? "nt-category-card selected"
+                                                        : "nt-category-card"
+                                                }
+                                                onClick={() =>
+                                                    update(
+                                                        "category",
+                                                        selected
+                                                            ? ""
+                                                            : item.id
+                                                    )
+                                                }
+                                                aria-pressed={
+                                                    selected
+                                                }
+                                            >
+
+                                                <div
+                                                    className="nt-category-icon"
+                                                >
+
+                                                    <span
+                                                        aria-hidden="true"
+                                                    >
+                                                        {
+                                                            item.icon
+                                                        }
+                                                    </span>
+
+                                                </div>
+
+
+                                                <strong>
+                                                    {getCategoryName(
+                                                        item
+                                                    )}
+                                                </strong>
+
+                                            </button>
+                                        );
+                                    }
+                                )}
+
+                            </div>
+
+                        </div>
+
+
+                        {/* =================================================
+                            NEIGHBORHOOD
+                        ================================================== */}
 
                         <FormInput
-                            label={
-                                french
-                                    ? "Quartier"
-                                    : "Neighborhood"
-                            }
+                            label={t(
+                                "neighborhood"
+                            )}
                             value={
                                 form.neighborhood
                             }
-                            onChange={(value) =>
+                            onChange={value =>
                                 update(
                                     "neighborhood",
                                     value
                                 )
                             }
-                            placeholder="Bastos"
+                            placeholder={t(
+                                "neighborhoodPlaceholder"
+                            )}
                         />
 
+
+                        {/* =================================================
+                            ADDRESS
+                        ================================================== */}
+
                         <FormInput
-                            label={
-                                french
-                                    ? "Adresse"
-                                    : "Address"
-                            }
+                            label={t(
+                                "address"
+                            )}
                             required
                             value={
                                 form.address
                             }
-                            onChange={(value) =>
+                            onChange={value =>
                                 update(
                                     "address",
                                     value
                                 )
                             }
-                            placeholder={
-                                french
-                                    ? "Adresse ou indication précise"
-                                    : "Address or clear directions"
-                            }
+                            placeholder={t(
+                                "addressPlaceholder"
+                            )}
                         />
 
+
+                        {/* =================================================
+                            CITY
+                        ================================================== */}
+
                         <FormInput
-                            label={
-                                french
-                                    ? "Ville"
-                                    : "City"
-                            }
+                            label={t(
+                                "city"
+                            )}
                             value={
                                 form.city
                             }
-                            onChange={(value) =>
+                            onChange={value =>
                                 update(
                                     "city",
                                     value
                                 )
                             }
+                            placeholder={t(
+                                "cityPlaceholder"
+                            )}
                         />
 
+
+                        {/* =================================================
+                            PRICE
+                        ================================================== */}
+
                         <FormInput
-                            label={
-                                french
-                                    ? "Dépense approximative"
-                                    : "Approximate spend"
-                            }
+                            label={t(
+                                "approximateSpend"
+                            )}
                             value={
                                 form.estimatedPrice
                             }
-                            onChange={(value) =>
+                            onChange={value =>
                                 update(
                                     "estimatedPrice",
                                     value
                                 )
                             }
                             type="number"
-                            placeholder="2000"
+                            min="0"
+                            placeholder={t(
+                                "approximateSpendPlaceholder"
+                            )}
                         />
 
+
+                        {/* =================================================
+                            PHONE
+                        ================================================== */}
+
                         <FormInput
-                            label={
-                                french
-                                    ? "Téléphone du spot"
-                                    : "Spot phone"
-                            }
+                            label={t(
+                                "spotPhone"
+                            )}
                             value={
                                 form.phone
                             }
-                            onChange={(value) =>
+                            onChange={value =>
                                 update(
                                     "phone",
                                     value
                                 )
                             }
+                            type="tel"
+                            placeholder={t(
+                                "phonePlaceholder"
+                            )}
                         />
+
+
+                        {/* =================================================
+                            WHATSAPP
+                        ================================================== */}
 
                         <FormInput
                             label="WhatsApp"
                             value={
                                 form.whatsapp
                             }
-                            onChange={(value) =>
+                            onChange={value =>
                                 update(
                                     "whatsapp",
                                     value
                                 )
                             }
+                            type="tel"
+                            placeholder={t(
+                                "whatsappPlaceholder"
+                            )}
                         />
 
-                        <div className="nt-introduce-divider">
+
+                        {/* =================================================
+                            ABOUT YOU
+                        ================================================== */}
+
+                        <div
+                            className="nt-introduce-divider"
+                        >
+
                             <span>
-                                {french
-                                    ? "À propos de vous"
-                                    : "About you"}
+                                {t(
+                                    "aboutYou"
+                                )}
                             </span>
+
                         </div>
 
+
                         <FormInput
-                            label={
-                                french
-                                    ? "Votre nom"
-                                    : "Your name"
-                            }
+                            label={t(
+                                "yourName"
+                            )}
                             value={
                                 form.submittedByName
                             }
-                            onChange={(value) =>
+                            onChange={value =>
                                 update(
                                     "submittedByName",
                                     value
                                 )
                             }
+                            placeholder={t(
+                                "yourNamePlaceholder"
+                            )}
                         />
 
+
                         <FormInput
-                            label={
-                                french
-                                    ? "Votre téléphone"
-                                    : "Your phone"
-                            }
+                            label={t(
+                                "yourPhone"
+                            )}
                             value={
                                 form.submittedByPhone
                             }
-                            onChange={(value) =>
+                            onChange={value =>
                                 update(
                                     "submittedByPhone",
                                     value
                                 )
                             }
+                            type="tel"
+                            placeholder={t(
+                                "yourPhonePlaceholder"
+                            )}
                         />
 
+
+                        {/* =================================================
+                            DESCRIPTION
+                        ================================================== */}
+
                         <div>
-                            <label>
-                                {french
-                                    ? "Décrivez le spot"
-                                    : "Tell us about the place"}
+
+                            <label
+                                htmlFor="spotDescription"
+                            >
+                                {t(
+                                    "describeSpot"
+                                )}
                             </label>
 
+
                             <textarea
+                                id="spotDescription"
                                 value={
                                     form.description
                                 }
-                                onChange={(
-                                    event
-                                ) =>
+                                onChange={event =>
                                     update(
                                         "description",
                                         event
@@ -492,19 +827,35 @@ export default function IntroducePage() {
                                             .value
                                     )
                                 }
-                                placeholder={
-                                    french
-                                        ? "Pourquoi aimez-vous cet endroit ?"
-                                        : "Why do you like this place?"
+                                placeholder={t(
+                                    "describeSpotPlaceholder"
+                                )}
+                                rows={5}
+                                maxLength={
+                                    2000
                                 }
                             />
+
                         </div>
 
+
+                        {/* =================================================
+                            ERROR
+                        ================================================== */}
+
                         {error && (
-                            <div className="nt-introduce-error">
+                            <div
+                                className="nt-introduce-error"
+                                role="alert"
+                            >
                                 {error}
                             </div>
                         )}
+
+
+                        {/* =================================================
+                            SUBMIT
+                        ================================================== */}
 
                         <button
                             type="submit"
@@ -513,27 +864,83 @@ export default function IntroducePage() {
                             }
                             className="nt-introduce-primary"
                         >
-                            {loading
-                                ? french
-                                    ? "Envoi..."
-                                    : "Sending..."
-                                : french
-                                    ? "Présenter ce spot"
-                                    : "Introduce this spot"}
 
-                            <Send
-                                size={16}
-                            />
+                            {loading ? (
+                                <>
+                                    <span
+                                        className="nt-loading-spinner"
+                                        style={{
+                                            width:
+                                                "18px",
+                                            height:
+                                                "18px",
+                                            borderWidth:
+                                                "2px",
+                                            borderColor:
+                                                "rgba(255,255,255,0.35)",
+                                            borderTopColor:
+                                                "#FFFFFF",
+                                        }}
+                                    />
+
+                                    {t(
+                                        "sending"
+                                    )}
+                                </>
+                            ) : (
+                                <>
+                                    <span>
+                                        {t(
+                                            "introduceSpot"
+                                        )}
+                                    </span>
+
+                                    <Send
+                                        size={17}
+                                    />
+                                </>
+                            )}
+
                         </button>
+
+
+                        {/* =================================================
+                            REVIEW NOTE
+                        ================================================== */}
+
+                        <p
+                            style={{
+                                margin:
+                                    "12px 0 0",
+                                textAlign:
+                                    "center",
+                                color:
+                                    "var(--nt-muted)",
+                                fontSize:
+                                    "0.75rem",
+                                lineHeight:
+                                    "1.5",
+                            }}
+                        >
+                            {t(
+                                "introduceReviewNote"
+                            )}
+                        </p>
 
                     </form>
 
                 </div>
 
             </main>
+
         </AppShell>
     );
 }
+
+
+/* =====================================================
+   REUSABLE FORM INPUT
+====================================================== */
 
 function FormInput({
     label,
@@ -542,11 +949,14 @@ function FormInput({
     placeholder,
     type = "text",
     required = false,
+    min,
 }) {
     return (
         <div>
+
             <label>
                 {label}
+
                 {required && (
                     <span>
                         {" "}
@@ -554,6 +964,7 @@ function FormInput({
                     </span>
                 )}
             </label>
+
 
             <input
                 type={type}
@@ -564,13 +975,18 @@ function FormInput({
                 required={
                     required
                 }
-                onChange={(event) =>
+                min={
+                    min
+                }
+                onChange={event =>
                     onChange(
-                        event.target
+                        event
+                            .target
                             .value
                     )
                 }
             />
+
         </div>
     );
 }

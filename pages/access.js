@@ -1,4 +1,8 @@
-import { useEffect, useState } from "react";
+import {
+    useEffect,
+    useState,
+} from "react";
+
 import {
     CheckCircle2,
     Clock,
@@ -10,66 +14,112 @@ import {
 } from "lucide-react";
 
 import AppShell from "../components/layout/AppShell";
+import {
+    ACCESS_PRICE,
+    ACCESS_DURATION_HOURS,
+    MOMO_NUMBER,
+    isLaunchFree,
+} from "../lib/access";
+import { useLanguage } from "../lib/i18n";
 
-const MOMO_NUMBER =
-    "677247425";
 
 export default function AccessPage() {
-    const [language, setLanguage] =
-        useState("en");
+    const {
+        language,
+        setLanguage,
+        t,
+    } = useLanguage();
 
-    const [copied, setCopied] =
-        useState(false);
+    const [
+        copied,
+        setCopied,
+    ] = useState(false);
 
-    const [proof, setProof] =
-        useState(null);
+    const [
+        proof,
+        setProof,
+    ] = useState(null);
 
-    const [reference, setReference] =
-        useState("");
+    const [
+        reference,
+        setReference,
+    ] = useState("");
 
-    const [loading, setLoading] =
-        useState(false);
+    const [
+        loading,
+        setLoading,
+    ] = useState(false);
 
-    const [success, setSuccess] =
-        useState(false);
+    const [
+        success,
+        setSuccess,
+    ] = useState(false);
 
-    const [error, setError] =
-        useState("");
+    const [
+        error,
+        setError,
+    ] = useState("");
 
     const french =
         language === "fr";
 
-    useEffect(() => {
-        const saved =
-            localStorage.getItem(
-                "nicethings_language"
-            );
 
+    /* =====================================================
+       DOCUMENT LANGUAGE
+    ====================================================== */
+
+    useEffect(() => {
         if (
-            saved === "fr" ||
-            saved === "en"
+            typeof document ===
+            "undefined"
         ) {
-            setLanguage(saved);
+            return;
         }
-    }, []);
+
+        document.documentElement.lang =
+            french
+                ? "fr"
+                : "en";
+    }, [french]);
+
+
+    /* =====================================================
+       COPY MOBILE MONEY NUMBER
+    ====================================================== */
 
     async function copyNumber() {
         try {
+            if (
+                typeof navigator ===
+                "undefined" ||
+                !navigator.clipboard
+            ) {
+                return;
+            }
+
             await navigator.clipboard.writeText(
                 MOMO_NUMBER
             );
 
             setCopied(true);
 
-            setTimeout(
-                () =>
-                    setCopied(false),
-                1800
+            setTimeout(() => {
+                setCopied(false);
+            }, 1800);
+        } catch (copyError) {
+            console.error(
+                "Copy number error:",
+                copyError
             );
-        } catch {
+
             setCopied(false);
         }
     }
+
+
+    /* =====================================================
+       SUBMIT PAYMENT
+    ====================================================== */
 
     async function submitPayment(
         event
@@ -88,13 +138,56 @@ export default function AccessPage() {
             return;
         }
 
+
+        /*
+         * Basic client-side validation.
+         *
+         * The API performs the real validation
+         * on the server.
+         */
+
+        if (
+            ![
+                "image/png",
+                "image/jpeg",
+                "image/webp",
+            ].includes(
+                proof.type
+            )
+        ) {
+            setError(
+                french
+                    ? "Format d'image non pris en charge."
+                    : "Unsupported image format."
+            );
+
+            return;
+        }
+
+
+        if (
+            proof.size >
+            5 * 1024 * 1024
+        ) {
+            setError(
+                french
+                    ? "L'image doit faire moins de 5 Mo."
+                    : "The image must be smaller than 5 MB."
+            );
+
+            return;
+        }
+
+
         setLoading(true);
+
 
         try {
             const visitorId =
                 localStorage.getItem(
                     "nicethings_visitor_id"
                 );
+
 
             if (!visitorId) {
                 throw new Error(
@@ -104,53 +197,77 @@ export default function AccessPage() {
                 );
             }
 
+
             const formData =
                 new FormData();
+
 
             formData.append(
                 "visitorId",
                 visitorId
             );
 
+
             formData.append(
                 "transactionReference",
                 reference.trim()
             );
+
 
             formData.append(
                 "proof",
                 proof
             );
 
+
             const response =
                 await fetch(
                     "/api/payments/submit",
                     {
-                        method: "POST",
-                        body: formData,
+                        method:
+                            "POST",
+
+                        body:
+                            formData,
                     }
                 );
 
-            const data =
-                await response.json();
 
-            if (!response.ok) {
+            let data = {};
+
+            try {
+                data =
+                    await response.json();
+            } catch {
+                data = {};
+            }
+
+
+            if (
+                !response.ok
+            ) {
                 throw new Error(
                     data.error ||
-                    "Unable to submit payment."
+                    (
+                        french
+                            ? "Impossible d'envoyer le paiement."
+                            : "Unable to submit payment."
+                    )
                 );
             }
 
-            setSuccess(
-                true
-            );
-        } catch (error) {
+
+            setSuccess(true);
+        } catch (
+        submitError
+        ) {
             console.error(
-                error
+                "Payment submission error:",
+                submitError
             );
 
             setError(
-                error.message ||
+                submitError.message ||
                 (
                     french
                         ? "Impossible d'envoyer le paiement."
@@ -162,101 +279,276 @@ export default function AccessPage() {
         }
     }
 
-    if (success) {
+
+    /* =====================================================
+       LAUNCH WEEK
+    ====================================================== */
+
+    if (
+        isLaunchFree()
+    ) {
         return (
             <AppShell>
-                <main className="nt-access-page">
-                    <div className="nt-access-success">
 
-                        <CheckCircle2
-                            size={42}
-                        />
+                <main
+                    className="nt-access-page"
+                >
 
-                        <h1>
-                            {french
-                                ? "Paiement reçu."
-                                : "Payment received."}
-                        </h1>
+                    <div
+                        className="nt-access-shell"
+                    >
 
-                        <p>
-                            {french
-                                ? "Votre paiement est en attente de vérification. Vous pourrez chercher dès que votre accès sera activé."
-                                : "Your payment is waiting for verification. You can search as soon as your access is activated."}
-                        </p>
-
-                        <button
-                            type="button"
-                            onClick={() =>
-                                window.location.href =
-                                "/"
-                            }
+                        <header
+                            className="nt-access-header"
                         >
-                            {french
-                                ? "Retour à NiceThings"
-                                : "Back to NiceThings"}
-                        </button>
+
+                            <div>
+                                <Sparkles
+                                    size={17}
+                                />
+
+                                <span>
+                                    NiceThings
+                                </span>
+                            </div>
+
+
+                            <LanguageSwitch
+                                language={
+                                    language
+                                }
+                                setLanguage={
+                                    setLanguage
+                                }
+                            />
+
+                        </header>
+
+
+                        <section
+                            className="nt-access-hero"
+                        >
+
+                            <div
+                                className="nt-access-icon"
+                            >
+                                <Sparkles
+                                    size={30}
+                                />
+                            </div>
+
+
+                            <span>
+                                {french
+                                    ? "Semaine de lancement"
+                                    : "Launch week"}
+                            </span>
+
+
+                            <h1>
+                                {french
+                                    ? "NiceThings est gratuit !"
+                                    : "NiceThings is free!"}
+                            </h1>
+
+
+                            <p>
+                                {french
+                                    ? "Profitez de vos découvertes gratuitement pendant notre semaine de lancement."
+                                    : "Enjoy NiceThings for free during our launch week."}
+                            </p>
+
+                        </section>
+
+
+                        <div
+                            className="nt-access-card"
+                        >
+
+                            <div
+                                className="nt-access-success"
+                            >
+
+                                <CheckCircle2
+                                    size={48}
+                                />
+
+
+                                <h2>
+                                    {french
+                                        ? "Aucun paiement nécessaire"
+                                        : "No payment needed"}
+                                </h2>
+
+
+                                <p>
+                                    {french
+                                        ? "Vous pouvez chercher et découvrir des endroits sans payer pendant la semaine de lancement."
+                                        : "You can search and discover places without paying during launch week."}
+                                </p>
+
+
+                                <button
+                                    type="button"
+                                    className="nt-access-submit"
+                                    onClick={() => {
+                                        window.location.href =
+                                            "/find";
+                                    }}
+                                >
+                                    {french
+                                        ? "Commencer à découvrir"
+                                        : "Start discovering"}
+                                </button>
+
+                            </div>
+
+                        </div>
+
+
+                        <div
+                            className="nt-access-note"
+                        >
+
+                            <Clock
+                                size={14}
+                            />
+
+                            <span>
+                                {french
+                                    ? `Le paiement de ${ACCESS_PRICE} FCFA pour ${ACCESS_DURATION_HOURS} heures commencera après la semaine de lancement.`
+                                    : `The ${ACCESS_PRICE} FCFA / ${ACCESS_DURATION_HOURS}-hour access will begin after launch week.`}
+                            </span>
+
+                        </div>
 
                     </div>
+
                 </main>
+
             </AppShell>
         );
     }
 
+
+    /* =====================================================
+       PAYMENT SUCCESS
+    ====================================================== */
+
+    if (
+        success
+    ) {
+        return (
+            <AppShell>
+
+                <main
+                    className="nt-access-page"
+                >
+
+                    <div
+                        className="nt-access-shell"
+                    >
+
+                        <div
+                            className="nt-access-success"
+                        >
+
+                            <CheckCircle2
+                                size={42}
+                            />
+
+
+                            <h1>
+                                {french
+                                    ? "Paiement reçu."
+                                    : "Payment received."}
+                            </h1>
+
+
+                            <p>
+                                {french
+                                    ? "Votre paiement est en attente de vérification. Vous pourrez chercher dès que votre accès sera activé."
+                                    : "Your payment is waiting for verification. You can search as soon as your access is activated."}
+                            </p>
+
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    window.location.href =
+                                        "/";
+                                }}
+                            >
+                                {french
+                                    ? "Retour à NiceThings"
+                                    : "Back to NiceThings"}
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </main>
+
+            </AppShell>
+        );
+    }
+
+
+    /* =====================================================
+       NORMAL PAID ACCESS
+    ====================================================== */
+
     return (
         <AppShell>
-            <main className="nt-access-page">
 
-                <div className="nt-access-shell">
+            <main
+                className="nt-access-page"
+            >
 
-                    <header className="nt-access-header">
+                <div
+                    className="nt-access-shell"
+                >
+
+                    <header
+                        className="nt-access-header"
+                    >
+
                         <div>
                             <Sparkles
                                 size={17}
                             />
 
-                            NiceThings
+                            <span>
+                                NiceThings
+                            </span>
                         </div>
 
-                        <div className="nt-language-switch">
-                            <button
-                                className={
-                                    !french
-                                        ? "active"
-                                        : ""
-                                }
-                                onClick={() =>
-                                    setLanguage(
-                                        "en"
-                                    )
-                                }
-                            >
-                                EN
-                            </button>
 
-                            <button
-                                className={
-                                    french
-                                        ? "active"
-                                        : ""
-                                }
-                                onClick={() =>
-                                    setLanguage(
-                                        "fr"
-                                    )
-                                }
-                            >
-                                FR
-                            </button>
-                        </div>
+                        <LanguageSwitch
+                            language={
+                                language
+                            }
+                            setLanguage={
+                                setLanguage
+                            }
+                        />
+
                     </header>
 
-                    <section className="nt-access-hero">
 
-                        <div className="nt-access-icon">
+                    <section
+                        className="nt-access-hero"
+                    >
+
+                        <div
+                            className="nt-access-icon"
+                        >
                             <Sparkles
                                 size={26}
                             />
                         </div>
+
 
                         <span>
                             {french
@@ -264,11 +556,13 @@ export default function AccessPage() {
                                 : "Discovery access"}
                         </span>
 
+
                         <h1>
                             {french
-                                ? "100 FCFA pour 24 heures de découvertes."
-                                : "100 FCFA for 24 hours of discovery."}
+                                ? `${ACCESS_PRICE} FCFA pour ${ACCESS_DURATION_HOURS} heures de découvertes.`
+                                : `${ACCESS_PRICE} FCFA for ${ACCESS_DURATION_HOURS} hours of discovery.`}
                         </h1>
+
 
                         <p>
                             {french
@@ -278,11 +572,19 @@ export default function AccessPage() {
 
                     </section>
 
-                    <div className="nt-access-card">
 
-                        <div className="nt-payment-price">
+                    <div
+                        className="nt-access-card"
+                    >
+
+                        {/* PRICE */}
+
+                        <div
+                            className="nt-payment-price"
+                        >
+
                             <strong>
-                                100
+                                {ACCESS_PRICE}
                             </strong>
 
                             <span>
@@ -290,16 +592,26 @@ export default function AccessPage() {
                             </span>
 
                             <small>
-                                / 24h
+                                /{" "}
+                                {ACCESS_DURATION_HOURS}
+                                h
                             </small>
+
                         </div>
 
-                        <div className="nt-payment-number">
+
+                        {/* MOBILE MONEY */}
+
+                        <div
+                            className="nt-payment-number"
+                        >
+
                             <Phone
                                 size={17}
                             />
 
                             <div>
+
                                 <span>
                                     {french
                                         ? "Numéro Mobile Money"
@@ -309,14 +621,22 @@ export default function AccessPage() {
                                 <strong>
                                     {MOMO_NUMBER}
                                 </strong>
+
                             </div>
+
 
                             <button
                                 type="button"
                                 onClick={
                                     copyNumber
                                 }
+                                aria-label={
+                                    french
+                                        ? "Copier le numéro"
+                                        : "Copy number"
+                                }
                             >
+
                                 {copied ? (
                                     <CheckCircle2
                                         size={16}
@@ -326,19 +646,27 @@ export default function AccessPage() {
                                         size={16}
                                     />
                                 )}
+
                             </button>
+
                         </div>
 
-                        <div className="nt-payment-steps">
+
+                        {/* PAYMENT STEPS */}
+
+                        <div
+                            className="nt-payment-steps"
+                        >
 
                             <PaymentStep
                                 number="1"
                                 text={
                                     french
-                                        ? "Envoyez 100 FCFA au numéro ci-dessus."
-                                        : "Send 100 FCFA to the number above."
+                                        ? `Envoyez ${ACCESS_PRICE} FCFA au numéro ci-dessus.`
+                                        : `Send ${ACCESS_PRICE} FCFA to the number above.`
                                 }
                             />
+
 
                             <PaymentStep
                                 number="2"
@@ -349,6 +677,7 @@ export default function AccessPage() {
                                 }
                             />
 
+
                             <PaymentStep
                                 number="3"
                                 text={
@@ -358,16 +687,20 @@ export default function AccessPage() {
                                 }
                             />
 
+
                             <PaymentStep
                                 number="4"
                                 text={
                                     french
-                                        ? "Nous vérifions et activons vos 24 heures."
-                                        : "We verify it and activate your 24 hours."
+                                        ? "Nous vérifions et activons vos heures d'accès."
+                                        : "We verify it and activate your access."
                                 }
                             />
 
                         </div>
+
+
+                        {/* PAYMENT FORM */}
 
                         <form
                             onSubmit={
@@ -375,11 +708,14 @@ export default function AccessPage() {
                             }
                         >
 
-                            <label className="nt-proof-upload">
+                            <label
+                                className="nt-proof-upload"
+                            >
 
                                 <ImagePlus
                                     size={22}
                                 />
+
 
                                 <strong>
                                     {proof
@@ -389,26 +725,35 @@ export default function AccessPage() {
                                             : "Add payment screenshot"}
                                 </strong>
 
+
                                 <span>
                                     PNG, JPG or WEBP
                                 </span>
+
 
                                 <input
                                     type="file"
                                     accept="image/png,image/jpeg,image/webp"
                                     onChange={(
                                         event
-                                    ) =>
-                                        setProof(
+                                    ) => {
+
+                                        const file =
                                             event
                                                 .target
                                                 .files?.[0] ||
-                                            null
-                                        )
-                                    }
+                                            null;
+
+                                        setError("");
+
+                                        setProof(
+                                            file
+                                        );
+                                    }}
                                 />
 
                             </label>
+
 
                             <input
                                 value={
@@ -428,13 +773,21 @@ export default function AccessPage() {
                                         ? "Référence de transaction (facultatif)"
                                         : "Transaction reference (optional)"
                                 }
+                                maxLength={
+                                    120
+                                }
                             />
 
+
                             {error && (
-                                <div className="nt-access-error">
+                                <div
+                                    className="nt-access-error"
+                                    role="alert"
+                                >
                                     {error}
                                 </div>
                             )}
+
 
                             <button
                                 type="submit"
@@ -443,9 +796,11 @@ export default function AccessPage() {
                                 }
                                 className="nt-access-submit"
                             >
+
                                 <ShieldCheck
                                     size={17}
                                 />
+
 
                                 {loading
                                     ? french
@@ -461,29 +816,105 @@ export default function AccessPage() {
 
                     </div>
 
-                    <div className="nt-access-note">
+
+                    <div
+                        className="nt-access-note"
+                    >
+
                         <Clock
                             size={14}
                         />
 
-                        {french
-                            ? "Votre accès commence uniquement après validation."
-                            : "Your 24-hour access begins only after approval."}
+                        <span>
+                            {french
+                                ? `Votre accès de ${ACCESS_DURATION_HOURS} heures commence uniquement après validation.`
+                                : `Your ${ACCESS_DURATION_HOURS}-hour access begins only after approval.`}
+                        </span>
+
                     </div>
 
                 </div>
 
             </main>
+
         </AppShell>
     );
 }
+
+
+/* =====================================================
+   LANGUAGE SWITCH
+====================================================== */
+
+function LanguageSwitch({
+    language,
+    setLanguage,
+}) {
+    return (
+        <div
+            className="nt-language-switch"
+        >
+
+            <button
+                type="button"
+                className={
+                    language ===
+                        "en"
+                        ? "active"
+                        : ""
+                }
+                onClick={() =>
+                    setLanguage(
+                        "en"
+                    )
+                }
+                aria-pressed={
+                    language ===
+                    "en"
+                }
+            >
+                EN
+            </button>
+
+
+            <button
+                type="button"
+                className={
+                    language ===
+                        "fr"
+                        ? "active"
+                        : ""
+                }
+                onClick={() =>
+                    setLanguage(
+                        "fr"
+                    )
+                }
+                aria-pressed={
+                    language ===
+                    "fr"
+                }
+            >
+                FR
+            </button>
+
+        </div>
+    );
+}
+
+
+/* =====================================================
+   PAYMENT STEP
+====================================================== */
 
 function PaymentStep({
     number,
     text,
 }) {
     return (
-        <div className="nt-payment-step">
+        <div
+            className="nt-payment-step"
+        >
 
             <span>
                 {number}

@@ -1,67 +1,166 @@
 import { useEffect, useState } from "react";
+
 import {
     ArrowLeft,
     CheckCircle2,
     Clock3,
     CreditCard,
+    ExternalLink,
     RefreshCw,
     ShieldCheck,
     XCircle,
 } from "lucide-react";
 
-export default function AdminPayments() {
-    const [payments, setPayments] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [actionLoading, setActionLoading] = useState("");
-    const [error, setError] = useState("");
+import Link from "next/link";
+
+import { useLanguage } from "../../lib/i18n";
+
+
+export default function AdminPaymentsPage() {
+    const {
+        language,
+        setLanguage,
+    } = useLanguage();
+
+    const french =
+        language === "fr";
+
+
+    const [
+        payments,
+        setPayments,
+    ] = useState([]);
+
+    const [
+        loading,
+        setLoading,
+    ] = useState(true);
+
+    const [
+        refreshing,
+        setRefreshing,
+    ] = useState(false);
+
+    const [
+        error,
+        setError,
+    ] = useState("");
+
+    const [
+        actionId,
+        setActionId,
+    ] = useState("");
+
+    const [
+        filter,
+        setFilter,
+    ] = useState("PENDING");
+
+
+    /* =====================================================
+       LOAD PAYMENTS
+    ====================================================== */
 
     useEffect(() => {
-        checkAuthAndLoad();
+        loadPayments();
     }, []);
 
-    async function checkAuthAndLoad() {
+
+    async function loadPayments(
+        silent = false
+    ) {
+        if (silent) {
+            setRefreshing(true);
+        } else {
+            setLoading(true);
+        }
+
+        setError("");
+
+
         try {
-            const authResponse = await fetch(
-                "/api/admin/me",
-                {
-                    credentials: "include",
-                }
-            );
+            const response =
+                await fetch(
+                    "/api/admin/payments",
+                    {
+                        method:
+                            "GET",
 
-            const auth = await authResponse.json();
+                        credentials:
+                            "include",
+                    }
+                );
 
-            if (!auth.authenticated) {
-                window.location.href = "/admin/login";
+
+            let data = {};
+
+            try {
+                data =
+                    await response.json();
+            } catch {
+                data = {};
+            }
+
+
+            if (
+                response.status ===
+                401
+            ) {
+                window.location.replace(
+                    "/admin/login"
+                );
+
                 return;
             }
 
-            await loadPayments();
-        } catch (error) {
-            console.error(error);
-            setError("Unable to load payments.");
+
+            if (
+                !response.ok
+            ) {
+                throw new Error(
+                    data.error ||
+                    (
+                        french
+                            ? "Impossible de charger les paiements."
+                            : "Unable to load payments."
+                    )
+                );
+            }
+
+
+            setPayments(
+                Array.isArray(
+                    data.payments
+                )
+                    ? data.payments
+                    : []
+            );
+        } catch (
+        loadError
+        ) {
+            console.error(
+                "Admin payments:",
+                loadError
+            );
+
+            setError(
+                loadError.message ||
+                (
+                    french
+                        ? "Impossible de charger les paiements."
+                        : "Unable to load payments."
+                )
+            );
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     }
 
-    async function loadPayments() {
-        const response = await fetch(
-            "/api/admin/payments",
-            {
-                credentials: "include",
-            }
-        );
 
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(
-                data.error || "Unable to load payments."
-            );
-        }
-
-        setPayments(data.payments || []);
-    }
+    /* =====================================================
+       REVIEW PAYMENT
+    ====================================================== */
 
     async function reviewPayment(
         payment,
@@ -69,315 +168,1086 @@ export default function AdminPayments() {
     ) {
         let adminNote = null;
 
-        if (decision === "REJECT") {
+
+        if (
+            decision ===
+            "REJECT"
+        ) {
             adminNote =
                 window.prompt(
-                    "Reason for rejection (optional):"
+                    french
+                        ? "Motif du rejet (facultatif) :"
+                        : "Reason for rejection (optional):"
                 );
 
-            if (adminNote === null) {
+
+            if (
+                adminNote ===
+                null
+            ) {
                 return;
             }
-        } else {
-            const confirmed = window.confirm(
-                "Approve this payment and activate 24-hour access?"
-            );
+
+
+            adminNote =
+                adminNote.trim() ||
+                null;
+        }
+
+
+        if (
+            decision ===
+            "APPROVE"
+        ) {
+            const confirmed =
+                window.confirm(
+                    french
+                        ? "Approuver ce paiement et activer l'accès pendant 24 heures ?"
+                        : "Approve this payment and activate 24-hour access?"
+                );
+
 
             if (!confirmed) {
                 return;
             }
+
+
+            if (
+                !payment.proofUrl
+            ) {
+                setError(
+                    french
+                        ? "Impossible d'approuver un paiement sans preuve."
+                        : "A payment cannot be approved without proof."
+                );
+
+                return;
+            }
         }
 
-        setActionLoading(payment.id);
+
+        setActionId(
+            payment.id
+        );
+
+        setError("");
+
 
         try {
-            const response = await fetch(
-                "/api/admin/payments",
-                {
-                    method: "POST",
-                    credentials: "include",
-                    headers: {
-                        "Content-Type":
-                            "application/json",
-                    },
-                    body: JSON.stringify({
-                        paymentId: payment.id,
-                        decision,
-                        adminNote,
-                    }),
-                }
-            );
+            const response =
+                await fetch(
+                    "/api/admin/payments",
+                    {
+                        method:
+                            "POST",
 
-            const data = await response.json();
+                        credentials:
+                            "include",
 
-            if (!response.ok) {
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                        },
+
+                        body:
+                            JSON.stringify({
+                                paymentId:
+                                    payment.id,
+
+                                decision,
+
+                                adminNote,
+                            }),
+                    }
+                );
+
+
+            let data = {};
+
+            try {
+                data =
+                    await response.json();
+            } catch {
+                data = {};
+            }
+
+
+            if (
+                response.status ===
+                401
+            ) {
+                window.location.replace(
+                    "/admin/login"
+                );
+
+                return;
+            }
+
+
+            if (
+                !response.ok
+            ) {
                 throw new Error(
                     data.error ||
-                    "Unable to review payment."
+                    (
+                        french
+                            ? "Impossible de traiter ce paiement."
+                            : "Unable to process this payment."
+                    )
                 );
             }
 
-            await loadPayments();
-        } catch (error) {
-            console.error(error);
-            alert(error.message);
+
+            await loadPayments(
+                true
+            );
+        } catch (
+        reviewError
+        ) {
+            console.error(
+                "Review payment:",
+                reviewError
+            );
+
+            setError(
+                reviewError.message ||
+                (
+                    french
+                        ? "Impossible de traiter ce paiement."
+                        : "Unable to process this payment."
+                )
+            );
         } finally {
-            setActionLoading("");
+            setActionId("");
         }
     }
 
-    if (loading) {
+
+    /* =====================================================
+       FILTER
+    ====================================================== */
+
+    const filteredPayments =
+        payments.filter(
+            payment => {
+
+                if (
+                    filter ===
+                    "ALL"
+                ) {
+                    return true;
+                }
+
+                return (
+                    payment.status ===
+                    filter
+                );
+            }
+        );
+
+
+    const pendingCount =
+        payments.filter(
+            payment =>
+                payment.status ===
+                "PENDING"
+        ).length;
+
+
+    const approvedCount =
+        payments.filter(
+            payment =>
+                payment.status ===
+                "APPROVED"
+        ).length;
+
+
+    const rejectedCount =
+        payments.filter(
+            payment =>
+                payment.status ===
+                "REJECTED"
+        ).length;
+
+
+    /* =====================================================
+       LOADING
+    ====================================================== */
+
+    if (
+        loading
+    ) {
         return (
-            <AdminPageShell>
-                <Loading />
-            </AdminPageShell>
+            <main
+                className="nt-admin-page"
+            >
+
+                <div
+                    className="nt-admin-loading"
+                >
+
+                    <CreditCard
+                        size={28}
+                    />
+
+                    <p>
+                        {french
+                            ? "Chargement des paiements..."
+                            : "Loading payments..."}
+                    </p>
+
+                </div>
+
+            </main>
         );
     }
 
+
+    /* =====================================================
+       PAGE
+    ====================================================== */
+
     return (
-        <AdminPageShell>
-            <div className="nt-admin-section-header">
+        <main
+            className="nt-admin-page"
+        >
+
+            {/* =================================================
+                HEADER
+            ================================================== */}
+
+            <header
+                className="nt-admin-header"
+            >
+
                 <div>
-                    <div className="nt-admin-section-kicker">
-                        ACCESS PAYMENTS
+
+                    <Link
+                        href="/admin"
+                        className="nt-admin-back"
+                    >
+
+                        <ArrowLeft
+                            size={16}
+                        />
+
+                        {french
+                            ? "Tableau de bord"
+                            : "Dashboard"}
+
+                    </Link>
+
+
+                    <div
+                        className="nt-admin-eyebrow"
+                    >
+
+                        <ShieldCheck
+                            size={13}
+                        />
+
+                        NiceThings Control
+
                     </div>
 
-                    <h2>
-                        Payment requests
-                    </h2>
+
+                    <h1>
+                        {french
+                            ? "Paiements"
+                            : "Payments"}
+                    </h1>
+
 
                     <p>
-                        Review 100 FCFA access
-                        payments and activate
-                        24-hour discovery access.
+                        {french
+                            ? "Vérifiez les paiements et gérez les accès."
+                            : "Review payments and manage access."}
                     </p>
+
                 </div>
 
-                <button
-                    type="button"
-                    className="nt-admin-icon-button"
-                    onClick={loadPayments}
-                    title="Refresh"
+
+                <div
+                    className="nt-admin-header-actions"
                 >
-                    <RefreshCw size={17} />
-                </button>
-            </div>
+
+                    <div
+                        className="nt-language-switch"
+                    >
+
+                        <button
+                            type="button"
+                            className={
+                                language ===
+                                    "en"
+                                    ? "active"
+                                    : ""
+                            }
+                            onClick={() =>
+                                setLanguage(
+                                    "en"
+                                )
+                            }
+                        >
+                            EN
+                        </button>
+
+
+                        <button
+                            type="button"
+                            className={
+                                language ===
+                                    "fr"
+                                    ? "active"
+                                    : ""
+                            }
+                            onClick={() =>
+                                setLanguage(
+                                    "fr"
+                                )
+                            }
+                        >
+                            FR
+                        </button>
+
+                    </div>
+
+
+                    <button
+                        type="button"
+                        className="nt-admin-icon-button"
+                        onClick={() =>
+                            loadPayments(
+                                true
+                            )
+                        }
+                        disabled={
+                            refreshing
+                        }
+                        title={
+                            french
+                                ? "Actualiser"
+                                : "Refresh"
+                        }
+                    >
+
+                        <RefreshCw
+                            size={17}
+                            className={
+                                refreshing
+                                    ? "nt-spin"
+                                    : ""
+                            }
+                        />
+
+                    </button>
+
+                </div>
+
+            </header>
+
+
+            {/* =================================================
+                STATS
+            ================================================== */}
+
+            <section
+                className="nt-admin-stats"
+            >
+
+                <PaymentStat
+                    icon={
+                        <Clock3
+                            size={19}
+                        />
+                    }
+                    label={
+                        french
+                            ? "En attente"
+                            : "Pending"
+                    }
+                    value={
+                        pendingCount
+                    }
+                />
+
+
+                <PaymentStat
+                    icon={
+                        <CheckCircle2
+                            size={19}
+                        />
+                    }
+                    label={
+                        french
+                            ? "Approuvés"
+                            : "Approved"
+                    }
+                    value={
+                        approvedCount
+                    }
+                />
+
+
+                <PaymentStat
+                    icon={
+                        <XCircle
+                            size={19}
+                        />
+                    }
+                    label={
+                        french
+                            ? "Rejetés"
+                            : "Rejected"
+                    }
+                    value={
+                        rejectedCount
+                    }
+                />
+
+            </section>
+
+
+            {/* =================================================
+                ERROR
+            ================================================== */}
 
             {error && (
-                <div className="nt-admin-error">
+                <div
+                    className="nt-admin-error"
+                    role="alert"
+                >
                     {error}
                 </div>
             )}
 
-            {payments.length === 0 ? (
-                <div className="nt-admin-empty">
-                    <CreditCard size={28} />
 
-                    <h3>
-                        No payment requests
-                    </h3>
+            {/* =================================================
+                FILTERS
+            ================================================== */}
 
-                    <p>
-                        Payment requests will
-                        appear here when visitors
-                        request access.
-                    </p>
-                </div>
-            ) : (
-                <div className="nt-admin-payment-list">
-                    {payments.map(
-                        (payment) => (
-                            <PaymentCard
-                                key={payment.id}
-                                payment={payment}
-                                loading={
-                                    actionLoading ===
-                                    payment.id
-                                }
-                                onApprove={() =>
-                                    reviewPayment(
-                                        payment,
-                                        "APPROVE"
-                                    )
-                                }
-                                onReject={() =>
-                                    reviewPayment(
-                                        payment,
-                                        "REJECT"
-                                    )
-                                }
-                            />
-                        )
-                    )}
-                </div>
-            )}
-        </AdminPageShell>
-    );
-}
+            <section
+                className="nt-admin-section"
+            >
 
-function PaymentCard({
-    payment,
-    loading,
-    onApprove,
-    onReject,
-}) {
-    return (
-        <article className="nt-admin-payment">
-            <div className="nt-admin-payment-top">
-                <div>
-                    <div className="nt-admin-payment-amount">
-                        {payment.amount}{" "}
-                        {payment.currency}
+                <div
+                    className="nt-admin-section-header"
+                >
+
+                    <div>
+
+                        <div
+                            className="nt-admin-section-kicker"
+                        >
+                            {french
+                                ? "GESTION DES PAIEMENTS"
+                                : "PAYMENT MANAGEMENT"}
+                        </div>
+
+
+                        <h2>
+                            {french
+                                ? "Demandes d'accès"
+                                : "Access requests"}
+                        </h2>
+
                     </div>
 
-                    <div className="nt-admin-payment-meta">
-                        {new Date(
-                            payment.created_at
-                        ).toLocaleString()}
+
+                    <div
+                        className="nt-admin-filters"
+                    >
+
+                        <FilterButton
+                            active={
+                                filter ===
+                                "PENDING"
+                            }
+                            onClick={() =>
+                                setFilter(
+                                    "PENDING"
+                                )
+                            }
+                        >
+                            {french
+                                ? "En attente"
+                                : "Pending"}
+                        </FilterButton>
+
+
+                        <FilterButton
+                            active={
+                                filter ===
+                                "APPROVED"
+                            }
+                            onClick={() =>
+                                setFilter(
+                                    "APPROVED"
+                                )
+                            }
+                        >
+                            {french
+                                ? "Approuvés"
+                                : "Approved"}
+                        </FilterButton>
+
+
+                        <FilterButton
+                            active={
+                                filter ===
+                                "REJECTED"
+                            }
+                            onClick={() =>
+                                setFilter(
+                                    "REJECTED"
+                                )
+                            }
+                        >
+                            {french
+                                ? "Rejetés"
+                                : "Rejected"}
+                        </FilterButton>
+
+
+                        <FilterButton
+                            active={
+                                filter ===
+                                "ALL"
+                            }
+                            onClick={() =>
+                                setFilter(
+                                    "ALL"
+                                )
+                            }
+                        >
+                            {french
+                                ? "Tous"
+                                : "All"}
+                        </FilterButton>
+
                     </div>
+
                 </div>
 
-                <span
-                    className={`nt-admin-status ${String(
-                        payment.status || ""
-                    ).toLowerCase()}`}
-                >
-                    {payment.status}
-                </span>
-            </div>
 
-            <div className="nt-admin-payment-info">
-                <div>
-                    <span>
-                        Visitor
-                    </span>
+                {/* =================================================
+                    EMPTY
+                ================================================== */}
 
-                    <strong>
-                        {payment.visitor_id}
-                    </strong>
-                </div>
-
-                <div>
-                    <span>
-                        Transaction
-                    </span>
-
-                    <strong>
-                        {payment.transaction_reference ||
-                            "Not provided"}
-                    </strong>
-                </div>
-            </div>
-
-            {payment.proofUrl ? (
-                <a
-                    href={payment.proofUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="nt-admin-proof"
-                >
-                    <ShieldCheck size={16} />
-                    View payment proof
-                </a>
-            ) : (
-                <div className="nt-admin-proof missing">
-                    <Clock3 size={16} />
-                    Payment proof unavailable
-                </div>
-            )}
-
-            {payment.status === "PENDING" && (
-                <div className="nt-admin-payment-actions">
-                    <button
-                        type="button"
-                        className="nt-admin-reject"
-                        disabled={loading}
-                        onClick={onReject}
+                {filteredPayments.length ===
+                    0 ? (
+                    <div
+                        className="nt-admin-empty"
                     >
-                        <XCircle size={16} />
-                        Reject
-                    </button>
 
-                    <button
-                        type="button"
-                        className="nt-admin-approve"
-                        disabled={
-                            loading ||
-                            !payment.proofUrl
-                        }
-                        onClick={onApprove}
+                        <CreditCard
+                            size={28}
+                        />
+
+
+                        <h3>
+                            {filter ===
+                                "PENDING"
+                                ? french
+                                    ? "Aucun paiement en attente."
+                                    : "No pending payments."
+                                : french
+                                    ? "Aucun paiement dans cette catégorie."
+                                    : "No payments in this category."}
+                        </h3>
+
+
+                        <p>
+                            {french
+                                ? "Les nouvelles demandes apparaîtront ici."
+                                : "New requests will appear here."}
+                        </p>
+
+                    </div>
+                ) : (
+                    <div
+                        className="nt-admin-payment-list"
                     >
-                        {loading ? (
-                            <RefreshCw
-                                size={16}
-                                className="nt-spin"
-                            />
-                        ) : (
-                            <CheckCircle2
-                                size={16}
-                            />
+
+                        {filteredPayments.map(
+                            payment => (
+                                <PaymentCard
+                                    key={
+                                        payment.id
+                                    }
+                                    payment={
+                                        payment
+                                    }
+                                    french={
+                                        french
+                                    }
+                                    actionLoading={
+                                        actionId ===
+                                        payment.id
+                                    }
+                                    onApprove={() =>
+                                        reviewPayment(
+                                            payment,
+                                            "APPROVE"
+                                        )
+                                    }
+                                    onReject={() =>
+                                        reviewPayment(
+                                            payment,
+                                            "REJECT"
+                                        )
+                                    }
+                                />
+                            )
                         )}
 
-                        {loading
-                            ? "Processing..."
-                            : "Approve & activate"}
-                    </button>
-                </div>
-            )}
-        </article>
-    );
-}
-
-function AdminPageShell({
-    children,
-}) {
-    return (
-        <main className="nt-admin-page">
-            <header className="nt-admin-header">
-                <div>
-                    <div className="nt-admin-eyebrow">
-                        <ShieldCheck size={13} />
-                        NiceThings Control
                     </div>
+                )}
 
-                    <h1>
-                        Payments
-                    </h1>
+            </section>
 
-                    <p>
-                        Secure access management.
-                    </p>
-                </div>
-
-                <button
-                    type="button"
-                    className="nt-admin-logout"
-                    onClick={() =>
-                    (window.location.href =
-                        "/admin")
-                    }
-                >
-                    <ArrowLeft size={16} />
-                    Dashboard
-                </button>
-            </header>
-
-            {children}
         </main>
     );
 }
 
-function Loading() {
-    return (
-        <div className="nt-admin-loading">
-            <RefreshCw
-                size={28}
-                className="nt-spin"
-            />
 
-            <p>
-                Loading payments...
-            </p>
+/* =====================================================
+   PAYMENT STAT
+====================================================== */
+
+function PaymentStat({
+    icon,
+    label,
+    value,
+}) {
+    return (
+        <div
+            className="nt-admin-stat"
+        >
+
+            <div
+                className="nt-admin-stat-icon"
+            >
+                {icon}
+            </div>
+
+
+            <div>
+
+                <span>
+                    {label}
+                </span>
+
+
+                <strong>
+                    {value}
+                </strong>
+
+            </div>
+
         </div>
+    );
+}
+
+
+/* =====================================================
+   FILTER BUTTON
+====================================================== */
+
+function FilterButton({
+    active,
+    onClick,
+    children,
+}) {
+    return (
+        <button
+            type="button"
+            className={
+                active
+                    ? "nt-admin-filter active"
+                    : "nt-admin-filter"
+            }
+            onClick={
+                onClick
+            }
+        >
+            {children}
+        </button>
+    );
+}
+
+
+/* =====================================================
+   PAYMENT CARD
+====================================================== */
+
+function PaymentCard({
+    payment,
+    french,
+    actionLoading,
+    onApprove,
+    onReject,
+}) {
+    const [
+        proofOpen,
+        setProofOpen,
+    ] = useState(false);
+
+
+    const createdAt =
+        payment.created_at
+            ? new Date(
+                payment.created_at
+            ).toLocaleString(
+                french
+                    ? "fr-FR"
+                    : "en-GB"
+            )
+            : "—";
+
+
+    const reviewedAt =
+        payment.reviewed_at
+            ? new Date(
+                payment.reviewed_at
+            ).toLocaleString(
+                french
+                    ? "fr-FR"
+                    : "en-GB"
+            )
+            : null;
+
+
+    const status =
+        payment.status ||
+        "UNKNOWN";
+
+
+    const statusClass =
+        status.toLowerCase();
+
+
+    return (
+        <article
+            className="nt-admin-payment"
+        >
+
+            {/* =================================================
+                TOP
+            ================================================== */}
+
+            <div
+                className="nt-admin-payment-top"
+            >
+
+                <div>
+
+                    <div
+                        className="nt-admin-payment-amount"
+                    >
+                        {Number(
+                            payment.amount ||
+                            0
+                        ).toLocaleString(
+                            "fr-FR"
+                        )}{" "}
+                        {payment.currency ||
+                            "XAF"}
+                    </div>
+
+
+                    <div
+                        className="nt-admin-payment-meta"
+                    >
+                        {createdAt}
+                    </div>
+
+                </div>
+
+
+                <span
+                    className={`nt-admin-status ${statusClass}`}
+                >
+                    {status}
+                </span>
+
+            </div>
+
+
+            {/* =================================================
+                DETAILS
+            ================================================== */}
+
+            <div
+                className="nt-admin-payment-info"
+            >
+
+                <div>
+
+                    <span>
+                        {french
+                            ? "Visiteur"
+                            : "Visitor"}
+                    </span>
+
+
+                    <strong>
+                        {
+                            payment.visitor_id
+                        }
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        {french
+                            ? "Référence"
+                            : "Transaction reference"}
+                    </span>
+
+
+                    <strong>
+                        {payment.transaction_reference ||
+                            "—"}
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        {french
+                            ? "Pass d'accès"
+                            : "Access pass"}
+                    </span>
+
+
+                    <strong>
+                        {
+                            payment.access_pass_id
+                        }
+                    </strong>
+
+                </div>
+
+            </div>
+
+
+            {/* =================================================
+                PAYMENT PROOF
+            ================================================== */}
+
+            {payment.proofUrl ? (
+                <div
+                    className="nt-admin-proof-section"
+                >
+
+                    <button
+                        type="button"
+                        className="nt-admin-proof"
+                        onClick={() =>
+                            setProofOpen(
+                                current =>
+                                    !current
+                            )
+                        }
+                    >
+
+                        <ShieldCheck
+                            size={16}
+                        />
+
+
+                        {proofOpen
+                            ? french
+                                ? "Masquer la preuve"
+                                : "Hide payment proof"
+                            : french
+                                ? "Afficher la preuve de paiement"
+                                : "View payment proof"}
+
+                    </button>
+
+
+                    {proofOpen && (
+                        <div
+                            className="nt-admin-proof-viewer"
+                        >
+
+                            <img
+                                src={
+                                    payment.proofUrl
+                                }
+                                alt={
+                                    french
+                                        ? "Preuve de paiement"
+                                        : "Payment proof"
+                                }
+                            />
+
+
+                            <a
+                                href={
+                                    payment.proofUrl
+                                }
+                                target="_blank"
+                                rel="noreferrer"
+                                className="nt-admin-proof-link"
+                            >
+
+                                <ExternalLink
+                                    size={15}
+                                />
+
+                                {french
+                                    ? "Ouvrir dans un nouvel onglet"
+                                    : "Open in new tab"}
+
+                            </a>
+
+                        </div>
+                    )}
+
+                </div>
+            ) : (
+                <div
+                    className="nt-admin-proof missing"
+                >
+
+                    <XCircle
+                        size={16}
+                    />
+
+                    {french
+                        ? "Aucune preuve de paiement."
+                        : "No payment proof uploaded."}
+
+                </div>
+            )}
+
+
+            {/* =================================================
+                ADMIN NOTE
+            ================================================== */}
+
+            {payment.admin_note && (
+                <div
+                    className="nt-admin-note"
+                >
+
+                    <strong>
+                        {french
+                            ? "Note administrateur"
+                            : "Admin note"}
+                    </strong>
+
+
+                    <p>
+                        {
+                            payment.admin_note
+                        }
+                    </p>
+
+                </div>
+            )}
+
+
+            {/* =================================================
+                REVIEWED
+            ================================================== */}
+
+            {reviewedAt && (
+                <div
+                    className="nt-admin-payment-meta"
+                    style={{
+                        marginTop:
+                            "12px",
+                    }}
+                >
+                    {french
+                        ? `Traité le ${reviewedAt}`
+                        : `Reviewed ${reviewedAt}`}
+                </div>
+            )}
+
+
+            {/* =================================================
+                ACTIONS
+            ================================================== */}
+
+            {status ===
+                "PENDING" && (
+                    <div
+                        className="nt-admin-payment-actions"
+                    >
+
+                        <button
+                            type="button"
+                            className="nt-admin-reject"
+                            disabled={
+                                actionLoading
+                            }
+                            onClick={
+                                onReject
+                            }
+                        >
+
+                            <XCircle
+                                size={16}
+                            />
+
+                            {actionLoading
+                                ? french
+                                    ? "Traitement..."
+                                    : "Processing..."
+                                : french
+                                    ? "Rejeter"
+                                    : "Reject"}
+
+                        </button>
+
+
+                        <button
+                            type="button"
+                            className="nt-admin-approve"
+                            disabled={
+                                actionLoading ||
+                                !payment.proofUrl
+                            }
+                            onClick={
+                                onApprove
+                            }
+                        >
+
+                            {actionLoading ? (
+                                <RefreshCw
+                                    size={16}
+                                    className="nt-spin"
+                                />
+                            ) : (
+                                <CheckCircle2
+                                    size={16}
+                                />
+                            )}
+
+
+                            {actionLoading
+                                ? french
+                                    ? "Traitement..."
+                                    : "Processing..."
+                                : french
+                                    ? "Approuver et activer"
+                                    : "Approve & activate"}
+
+                        </button>
+
+                    </div>
+                )}
+
+        </article>
     );
 }

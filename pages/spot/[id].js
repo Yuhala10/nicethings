@@ -1,25 +1,34 @@
 import { useEffect, useState } from "react";
+
 import Link from "next/link";
+
 import {
     ArrowLeft,
     ArrowRight,
     Check,
     Clock3,
-    Copy,
     ExternalLink,
     MapPin,
     MessageCircle,
     Navigation,
+    Phone,
     Share2,
     Sparkles,
     Star,
 } from "lucide-react";
 
 import AppShell from "../../components/layout/AppShell";
+import { useLanguage } from "../../lib/i18n";
+import { NICE_THINGS } from "../../lib/constants";
+
 
 export default function SpotPage() {
-    const [language, setLanguage] =
-        useState("en");
+    const {
+        language,
+        setLanguage,
+        t,
+    } = useLanguage();
+
 
     const [spot, setSpot] =
         useState(null);
@@ -35,34 +44,42 @@ export default function SpotPage() {
 
     const [copied, setCopied] =
         useState(false);
+    const [isSaved, setIsSaved] =
+        useState(false);
 
-    const french =
-        language === "fr";
+
+    /* =====================================================
+       LOAD SPOT
+    ====================================================== */
 
     useEffect(() => {
-        const savedLanguage =
-            localStorage.getItem(
-                "nicethings_language"
-            );
-
-        if (
-            savedLanguage === "fr" ||
-            savedLanguage === "en"
-        ) {
-            setLanguage(
-                savedLanguage
-            );
-        }
-
         loadSpot();
     }, []);
+    useEffect(() => {
+        if (!spot?.id) {
+            setIsSaved(false);
+            return;
+        }
+
+        setIsSaved(
+            checkIfSaved(
+                spot
+            )
+        );
+    }, [spot?.id]);
+
 
     async function loadSpot() {
         try {
+            /*
+             * First try the spot passed
+             * from the Results page.
+             */
             const selected =
                 sessionStorage.getItem(
                     "nicethings_selected_spot"
                 );
+
 
             if (selected) {
                 const parsed =
@@ -70,6 +87,15 @@ export default function SpotPage() {
                         selected
                     );
 
+
+                /*
+                 * New format:
+                 *
+                 * {
+                 *     spot,
+                 *     searchId
+                 * }
+                 */
                 if (
                     parsed?.spot
                 ) {
@@ -88,15 +114,45 @@ export default function SpotPage() {
 
                     return;
                 }
+
+
+                /*
+                 * Backward compatibility:
+                 *
+                 * If Results stored the
+                 * spot directly.
+                 */
+                if (
+                    parsed?.id
+                ) {
+                    setSpot(
+                        parsed
+                    );
+
+                    setLoading(
+                        false
+                    );
+
+                    return;
+                }
             }
 
+
+            /*
+             * If the spot was not passed
+             * through sessionStorage,
+             * get its ID from the URL.
+             */
             const pathname =
                 window.location.pathname;
 
+
             const id =
-                pathname.split(
-                    "/"
-                ).pop();
+                pathname
+                    .split("/")
+                    .filter(Boolean)
+                    .pop();
+
 
             if (!id) {
                 throw new Error(
@@ -104,13 +160,16 @@ export default function SpotPage() {
                 );
             }
 
+
             const response =
                 await fetch(
                     `/api/spots/${id}`
                 );
 
+
             const data =
                 await response.json();
+
 
             if (!response.ok) {
                 throw new Error(
@@ -119,18 +178,23 @@ export default function SpotPage() {
                 );
             }
 
+
             setSpot(
                 data.spot
             );
-        } catch (error) {
+        } catch (
+        loadError
+        ) {
             console.error(
-                error
+                "NiceThings spot error:",
+                loadError
             );
 
+
             setError(
-                french
-                    ? "Impossible de charger ce spot."
-                    : "Unable to load this spot."
+                t(
+                    "spotLoadError"
+                )
             );
         } finally {
             setLoading(
@@ -139,79 +203,231 @@ export default function SpotPage() {
         }
     }
 
-    function changeLanguage(
-        value
-    ) {
-        setLanguage(value);
 
-        localStorage.setItem(
-            "nicethings_language",
-            value
-        );
+    /* =====================================================
+       CATEGORY
+    ====================================================== */
+
+    function getCategoryName(
+        categoryId
+    ) {
+        if (!categoryId) {
+            return t(
+                "discovery"
+            );
+        }
+
+
+        const category =
+            NICE_THINGS.categories?.find(
+                item =>
+                    item.id ===
+                    categoryId
+            );
+
+
+        if (!category) {
+            return categoryId;
+        }
+
+
+        return language === "fr"
+            ? category.fr
+            : category.en;
     }
 
+
+    /* =====================================================
+       PRICE
+    ====================================================== */
+
     function getPrice() {
+        if (!spot) {
+            return t(
+                "priceNotAvailable"
+            );
+        }
+
+
         const minimum =
             Number(
                 spot.minimum_price
             ) || 0;
+
 
         const maximum =
             Number(
                 spot.maximum_price
             ) || 0;
 
+
         const average =
             Number(
                 spot.average_price
             ) || 0;
 
+
         if (
-            minimum &&
-            maximum
+            minimum > 0 &&
+            maximum > 0 &&
+            minimum !== maximum
         ) {
-            return `${minimum.toLocaleString()}–${maximum.toLocaleString()} FCFA`;
+            return `${minimum.toLocaleString(
+                "fr-FR"
+            )} – ${maximum.toLocaleString(
+                "fr-FR"
+            )} ${spot.currency ||
+            "XAF"
+                }`;
         }
 
-        if (average) {
-            return `${average.toLocaleString()} FCFA`;
+
+        if (
+            average > 0
+        ) {
+            return `${average.toLocaleString(
+                "fr-FR"
+            )} ${spot.currency ||
+            "XAF"
+                }`;
         }
 
-        return french
-            ? "Prix non indiqué"
-            : "Price unavailable";
+
+        if (
+            minimum > 0
+        ) {
+            return `${minimum.toLocaleString(
+                "fr-FR"
+            )} ${spot.currency ||
+            "XAF"
+                }`;
+        }
+
+
+        return t(
+            "priceNotAvailable"
+        );
     }
+
+
+    /* =====================================================
+       GOOGLE MAPS
+    ====================================================== */
 
     function getGoogleMapsUrl() {
         if (
-            spot.latitude &&
-            spot.longitude
+            !spot
+        ) {
+            return "#";
+        }
+
+
+        if (
+            spot.latitude !==
+            null &&
+            spot.latitude !==
+            undefined &&
+            spot.longitude !==
+            null &&
+            spot.longitude !==
+            undefined
         ) {
             return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
                 `${spot.latitude},${spot.longitude}`
             )}`;
         }
 
+
         return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-            `${spot.name}, ${spot.address || spot.city || "Yaoundé"}`
+            `${spot.name}, ${spot.address ||
+            spot.city ||
+            NICE_THINGS.defaultCity ||
+            "Yaoundé"
+            }`
         )}`;
     }
 
+
+    /* =====================================================
+       CALL
+    ====================================================== */
+
+    function callSpot() {
+        if (
+            !spot?.phone
+        ) {
+            return;
+        }
+
+
+        window.location.href =
+            `tel:${spot.phone}`;
+    }
+
+
+    /* =====================================================
+       WHATSAPP
+    ====================================================== */
+
+    function openWhatsApp() {
+        if (
+            !spot?.whatsapp &&
+            !spot?.phone
+        ) {
+            return;
+        }
+
+
+        const number =
+            spot.whatsapp ||
+            spot.phone;
+
+
+        const cleanNumber =
+            String(number)
+                .replace(
+                    /[^\d+]/g,
+                    ""
+                );
+
+
+        window.open(
+            `https://wa.me/${cleanNumber.replace(
+                "+",
+                ""
+            )}`,
+            "_blank",
+            "noopener,noreferrer"
+        );
+    }
+
+
+    /* =====================================================
+       SHARE
+    ====================================================== */
+
     async function shareSpot() {
+        if (!spot) {
+            return;
+        }
+
+
         const url =
             window.location.href;
+
 
         const shareData = {
             title:
                 spot.name,
 
             text:
-                french
-                    ? `J'ai trouvé ${spot.name} sur NiceThings.`
-                    : `I found ${spot.name} on NiceThings.`,
+                t(
+                    "shareSpotText"
+                ),
 
             url,
         };
+
 
         try {
             if (
@@ -224,56 +440,226 @@ export default function SpotPage() {
                 return;
             }
 
-            await navigator.clipboard.writeText(
-                url
-            );
 
-            setCopied(true);
+            if (
+                navigator.clipboard
+            ) {
+                await navigator.clipboard.writeText(
+                    url
+                );
 
-            setTimeout(() => {
-                setCopied(false);
-            }, 2200);
-        } catch (error) {
+                setCopied(
+                    true
+                );
+
+
+                setTimeout(() => {
+                    setCopied(
+                        false
+                    );
+                }, 2200);
+            }
+        } catch (
+        shareError
+        ) {
             console.error(
-                error
+                "Share error:",
+                shareError
             );
         }
     }
 
-    function shareWhatsApp() {
-        const text =
-            french
-                ? `Regarde ce spot que j'ai trouvé sur NiceThings : ${spot.name} ${window.location.href}`
-                : `Check out this spot I found on NiceThings: ${spot.name} ${window.location.href}`;
+    /* =====================================================
+   SAVED PLACES
+===================================================== */
 
-        window.open(
-            `https://wa.me/?text=${encodeURIComponent(
-                text
-            )}`,
-            "_blank",
-            "noopener,noreferrer"
-        );
+    const SAVED_KEY =
+        "nicethings_saved_spots";
+
+
+    function checkIfSaved(
+        currentSpot
+    ) {
+        if (
+            typeof window ===
+            "undefined" ||
+            !currentSpot?.id
+        ) {
+            return false;
+        }
+
+        try {
+            const stored =
+                localStorage.getItem(
+                    SAVED_KEY
+                );
+
+            if (!stored) {
+                return false;
+            }
+
+            const saved =
+                JSON.parse(
+                    stored
+                );
+
+            if (
+                !Array.isArray(
+                    saved
+                )
+            ) {
+                return false;
+            }
+
+            return saved.some(
+                item =>
+                    String(
+                        item.id
+                    ) ===
+                    String(
+                        currentSpot.id
+                    )
+            );
+        } catch (
+        storageError
+        ) {
+            console.error(
+                "Saved check error:",
+                storageError
+            );
+
+            return false;
+        }
     }
+
+
+    function toggleSaved() {
+        if (
+            !spot?.id ||
+            typeof window ===
+            "undefined"
+        ) {
+            return;
+        }
+
+        try {
+            const stored =
+                localStorage.getItem(
+                    SAVED_KEY
+                );
+
+            let saved = [];
+
+            if (stored) {
+                const parsed =
+                    JSON.parse(
+                        stored
+                    );
+
+                if (
+                    Array.isArray(
+                        parsed
+                    )
+                ) {
+                    saved = parsed;
+                }
+            }
+
+            const alreadySaved =
+                saved.some(
+                    item =>
+                        String(
+                            item.id
+                        ) ===
+                        String(
+                            spot.id
+                        )
+                );
+
+            if (alreadySaved) {
+                saved =
+                    saved.filter(
+                        item =>
+                            String(
+                                item.id
+                            ) !==
+                            String(
+                                spot.id
+                            )
+                    );
+
+                setIsSaved(
+                    false
+                );
+            } else {
+                saved = [
+                    spot,
+                    ...saved.filter(
+                        item =>
+                            String(
+                                item.id
+                            ) !==
+                            String(
+                                spot.id
+                            )
+                    ),
+                ];
+
+                setIsSaved(
+                    true
+                );
+            }
+
+            localStorage.setItem(
+                SAVED_KEY,
+                JSON.stringify(
+                    saved
+                )
+            );
+        } catch (
+        storageError
+        ) {
+            console.error(
+                "Save place error:",
+                storageError
+            );
+        }
+    }
+
+    /* =====================================================
+   LOADING
+====================================================== */
 
     if (loading) {
         return (
             <AppShell>
                 <main className="nt-spot-page">
-                    <div className="nt-spot-loading">
-                        <Sparkles
-                            size={28}
-                        />
+                    <div className="nt-spot-shell">
 
-                        <span>
-                            {french
-                                ? "Préparation du spot..."
-                                : "Preparing your spot..."}
-                        </span>
+                        <div
+                            className="nt-spot-loading"
+                        >
+                            <span
+                                className="nt-loading-spinner"
+                            />
+
+                            <p>
+                                {t(
+                                    "loading"
+                                )}
+                            </p>
+                        </div>
+
                     </div>
                 </main>
             </AppShell>
         );
     }
+
+
+    /* =====================================================
+       ERROR
+    ====================================================== */
 
     if (
         error ||
@@ -282,32 +668,128 @@ export default function SpotPage() {
         return (
             <AppShell>
                 <main className="nt-spot-page">
-                    <div className="nt-spot-error">
-                        <MapPin
-                            size={30}
-                        />
+                    <div className="nt-spot-shell">
 
-                        <h1>
-                            {error}
-                        </h1>
-
-                        <Link
-                            href="/find"
-                            className="nt-spot-primary-button"
+                        <button
+                            type="button"
+                            className="nt-button-secondary"
+                            onClick={() =>
+                                window.history.back()
+                            }
                         >
-                            {french
-                                ? "Rechercher un autre spot"
-                                : "Find another spot"}
-
-                            <ArrowRight
+                            <ArrowLeft
                                 size={17}
                             />
-                        </Link>
+
+                            {t(
+                                "back"
+                            )}
+                        </button>
+
+
+                        <div
+                            className="nt-spot-empty"
+                        >
+                            <Sparkles
+                                size={30}
+                            />
+
+                            <h1>
+                                {t(
+                                    "spotNotFound"
+                                )}
+                            </h1>
+
+                            <p>
+                                {error ||
+                                    t(
+                                        "spotLoadError"
+                                    )}
+                            </p>
+
+
+                            <Link
+                                href="/find"
+                                className="nt-button-primary"
+                            >
+                                <Navigation
+                                    size={17}
+                                />
+
+                                {t(
+                                    "findSpot"
+                                )}
+
+                                <ArrowRight
+                                    size={17}
+                                />
+                            </Link>
+
+                        </div>
+
                     </div>
                 </main>
             </AppShell>
         );
     }
+
+
+    /* =====================================================
+       SPOT DATA
+    ====================================================== */
+
+    const address =
+        [
+            spot.neighborhood,
+            spot.address,
+            spot.city,
+        ]
+            .filter(Boolean)
+            .join(", ");
+
+
+    const category =
+        getCategoryName(
+            spot.category
+        );
+
+
+    const price =
+        getPrice();
+
+
+    const mapsUrl =
+        getGoogleMapsUrl();
+
+
+    const hasPhone =
+        Boolean(
+            spot.phone
+        );
+
+
+    const hasWhatsApp =
+        Boolean(
+            spot.whatsapp ||
+            spot.phone
+        );
+
+
+    const rating =
+        Number(
+            spot.rating
+        ) || 0;
+
+
+    const reviewCount =
+        Number(
+            spot.review_count
+        ) || 0;
+
+
+    /* =====================================================
+       PAGE
+    ====================================================== */
 
     return (
         <AppShell>
@@ -315,34 +797,51 @@ export default function SpotPage() {
 
                 <div className="nt-spot-shell">
 
-                    {/* HEADER */}
+                    {/* =================================================
+                        TOP BAR
+                    ================================================== */}
 
-                    <header className="nt-spot-header">
+                    <header
+                        className="nt-spot-topbar"
+                    >
 
-                        <Link
-                            href="/results"
-                            className="nt-spot-back"
+                        <button
+                            type="button"
+                            className="nt-button-secondary"
+                            onClick={() =>
+                                window.history.back()
+                            }
                         >
                             <ArrowLeft
                                 size={17}
                             />
 
-                            <span>
-                                {french
-                                    ? "Résultats"
-                                    : "Results"}
-                            </span>
-                        </Link>
+                            {t(
+                                "back"
+                            )}
+                        </button>
 
-                        <div className="nt-spot-brand">
+
+                        <div
+                            className="nt-spot-brand"
+                        >
                             <Sparkles
-                                size={15}
+                                size={16}
                             />
 
                             NiceThings
                         </div>
 
-                        <div className="nt-language-switch">
+
+                        <div
+                            className="nt-language-switch"
+                            aria-label={
+                                t(
+                                    "language"
+                                )
+                            }
+                        >
+
                             <button
                                 type="button"
                                 className={
@@ -352,7 +851,7 @@ export default function SpotPage() {
                                         : ""
                                 }
                                 onClick={() =>
-                                    changeLanguage(
+                                    setLanguage(
                                         "en"
                                     )
                                 }
@@ -360,6 +859,7 @@ export default function SpotPage() {
                                 EN
                             </button>
 
+
                             <button
                                 type="button"
                                 className={
@@ -369,512 +869,607 @@ export default function SpotPage() {
                                         : ""
                                 }
                                 onClick={() =>
-                                    changeLanguage(
+                                    setLanguage(
                                         "fr"
                                     )
                                 }
                             >
                                 FR
                             </button>
+
                         </div>
+
                     </header>
 
 
-                    {/* HERO */}
+                    {/* =================================================
+                        HERO
+                    ================================================== */}
 
-                    <section className="nt-spot-hero">
+                    <section
+                        className="nt-spot-hero"
+                    >
 
-                        <div className="nt-spot-hero-background">
-                            <Sparkles
-                                size={45}
+                        <div
+                            className="nt-spot-hero-icon"
+                        >
+                            🍽️
+                        </div>
+
+
+                        <div
+                            className="nt-spot-hero-content"
+                        >
+
+                            <div
+                                className="nt-spot-eyebrow"
+                            >
+                                <MapPin
+                                    size={13}
+                                />
+
+                                {category}
+                            </div>
+
+
+                            <div
+                                className="nt-spot-title-row"
+                            >
+
+                                <h1>
+                                    {
+                                        spot.name
+                                    }
+                                </h1>
+
+
+                                {spot.verified && (
+                                    <span
+                                        className="nt-verified-badge"
+                                    >
+                                        <Check
+                                            size={13}
+                                        />
+
+                                        {t(
+                                            "verified"
+                                        )}
+                                    </span>
+                                )}
+
+                            </div>
+
+
+                            {address && (
+                                <p
+                                    className="nt-spot-address"
+                                >
+                                    <MapPin
+                                        size={16}
+                                    />
+
+                                    {address}
+                                </p>
+                            )}
+
+                        </div>
+
+                    </section>
+
+
+                    {/* =================================================
+                        QUICK INFO
+                    ================================================== */}
+
+                    <section
+                        className="nt-spot-info-grid"
+                    >
+
+                        <div
+                            className="nt-spot-info-card"
+                        >
+                            <span>
+                                <Sparkles
+                                    size={15}
+                                />
+
+                                {t(
+                                    "category"
+                                )}
+                            </span>
+
+                            <strong>
+                                {category}
+                            </strong>
+                        </div>
+
+
+                        <div
+                            className="nt-spot-info-card"
+                        >
+                            <span>
+                                <span className="nt-price-symbol">
+                                    FCFA
+                                </span>
+
+                                {t(
+                                    "budget"
+                                )}
+                            </span>
+
+                            <strong>
+                                {price}
+                            </strong>
+                        </div>
+
+
+                        <div
+                            className="nt-spot-info-card"
+                        >
+                            <span>
+                                <Star
+                                    size={15}
+                                />
+
+                                {t(
+                                    "rating"
+                                )}
+                            </span>
+
+                            <strong>
+                                {rating > 0
+                                    ? rating.toFixed(
+                                        1
+                                    )
+                                    : t(
+                                        "notRated"
+                                    )}
+
+                                {reviewCount >
+                                    0 && (
+                                        <small>
+                                            {" "}
+                                            (
+                                            {
+                                                reviewCount
+                                            }
+                                            )
+                                        </small>
+                                    )}
+                            </strong>
+                        </div>
+
+                    </section>
+                    {/* =================================================
+                        ABOUT
+                    ================================================== */}
+
+                    {spot.description && (
+                        <section
+                            className="nt-spot-section"
+                        >
+                            <div
+                                className="nt-spot-section-heading"
+                            >
+                                <Sparkles
+                                    size={17}
+                                />
+
+                                <h2>
+                                    {t(
+                                        "aboutThisPlace"
+                                    )}
+                                </h2>
+                            </div>
+
+                            <p
+                                className="nt-spot-description"
+                            >
+                                {
+                                    spot.description
+                                }
+                            </p>
+                        </section>
+                    )}
+
+
+                    {/* =================================================
+                        OPENING HOURS
+                    ================================================== */}
+
+                    {(spot.opening_time ||
+                        spot.closing_time) && (
+                            <section
+                                className="nt-spot-section"
+                            >
+                                <div
+                                    className="nt-spot-section-heading"
+                                >
+                                    <Clock3
+                                        size={17}
+                                    />
+
+                                    <h2>
+                                        {t(
+                                            "openingHours"
+                                        )}
+                                    </h2>
+                                </div>
+
+
+                                <div
+                                    className="nt-spot-hours"
+                                >
+                                    <div>
+                                        <span>
+                                            {t(
+                                                "today"
+                                            )}
+                                        </span>
+
+                                        <strong>
+                                            {spot.opening_time &&
+                                                spot.closing_time
+                                                ? `${spot.opening_time} – ${spot.closing_time}`
+                                                : t(
+                                                    "hoursNotAvailable"
+                                                )}
+                                        </strong>
+                                    </div>
+                                </div>
+                            </section>
+                        )}
+
+
+                    {/* =================================================
+                        LOCATION
+                    ================================================== */}
+
+                    <section
+                        className="nt-spot-section"
+                    >
+                        <div
+                            className="nt-spot-section-heading"
+                        >
+                            <MapPin
+                                size={17}
+                            />
+
+                            <h2>
+                                {t(
+                                    "location"
+                                )}
+                            </h2>
+                        </div>
+
+
+                        <div
+                            className="nt-spot-location-card"
+                        >
+                            <div>
+                                <strong>
+                                    {
+                                        spot.name
+                                    }
+                                </strong>
+
+                                {address && (
+                                    <p>
+                                        {
+                                            address
+                                        }
+                                    </p>
+                                )}
+                            </div>
+
+
+                            <a
+                                href={
+                                    mapsUrl
+                                }
+                                target="_blank"
+                                rel="noreferrer"
+                                className="nt-button-primary"
+                            >
+                                <Navigation
+                                    size={17}
+                                />
+
+                                {t(
+                                    "findThisPlace"
+                                )}
+
+                                <ExternalLink
+                                    size={15}
+                                />
+                            </a>
+                        </div>
+                    </section>
+
+
+                    {/* =================================================
+    ACTIONS
+================================================== */}
+
+                    <section
+                        className="nt-spot-actions"
+                    >
+
+                        {hasPhone && (
+                            <button
+                                type="button"
+                                className="nt-spot-action primary"
+                                onClick={
+                                    callSpot
+                                }
+                            >
+                                <Phone
+                                    size={19}
+                                />
+
+                                <span>
+                                    {t(
+                                        "call"
+                                    )}
+                                </span>
+                            </button>
+                        )}
+
+
+                        {hasWhatsApp && (
+                            <button
+                                type="button"
+                                className="nt-spot-action"
+                                onClick={
+                                    openWhatsApp
+                                }
+                            >
+                                <MessageCircle
+                                    size={19}
+                                />
+
+                                <span>
+                                    {t(
+                                        "whatsapp"
+                                    )}
+                                </span>
+                            </button>
+                        )}
+
+
+                        <button
+                            type="button"
+                            className="nt-spot-action"
+                            onClick={
+                                shareSpot
+                            }
+                        >
+                            <Share2
+                                size={19}
                             />
 
                             <span>
-                                NiceThings
+                                {copied
+                                    ? t(
+                                        "copied"
+                                    )
+                                    : t(
+                                        "share"
+                                    )}
                             </span>
-                        </div>
+                        </button>
 
-                        <div className="nt-spot-hero-overlay" />
 
-                        <div className="nt-spot-hero-content">
+                        <button
+                            type="button"
+                            className={
+                                isSaved
+                                    ? "nt-spot-action saved"
+                                    : "nt-spot-action"
+                            }
+                            onClick={
+                                toggleSaved
+                            }
+                            aria-pressed={
+                                isSaved
+                            }
+                        >
+                            <HeartIcon
+                                filled={
+                                    isSaved
+                                }
+                            />
 
-                            {spot.verified && (
-                                <div className="nt-spot-verified">
-                                    <Check
-                                        size={13}
-                                    />
-
-                                    {french
-                                        ? "Spot vérifié"
-                                        : "Verified spot"}
-                                </div>
-                            )}
-
-                            <h1>
-                                {spot.name}
-                            </h1>
-
-                            <p>
-                                {spot.description ||
-                                    (french
-                                        ? "Un endroit qui pourrait bien devenir votre prochaine bonne découverte."
-                                        : "A place that could become your next great discovery.")}
-                            </p>
-
-                        </div>
+                            <span>
+                                {isSaved
+                                    ? t(
+                                        "savedPlace"
+                                    )
+                                    : t(
+                                        "savePlace"
+                                    )}
+                            </span>
+                        </button>
 
                     </section>
 
+                    {/* =================================================
+                        CONTACT NOTICE
+                    ================================================== */}
 
-                    {/* QUICK FACTS */}
-
-                    <section className="nt-spot-quick-facts">
-
-                        <QuickFact
-                            icon={
+                    {(hasPhone ||
+                        hasWhatsApp) && (
+                            <div
+                                className="nt-spot-contact-note"
+                            >
                                 <Sparkles
-                                    size={16}
+                                    size={14}
                                 />
-                            }
-                            label={
-                                french
-                                    ? "Dépense typique"
-                                    : "Typical spend"
-                            }
-                            value={
-                                getPrice()
-                            }
-                        />
 
-                        <QuickFact
-                            icon={
-                                <Star
-                                    size={16}
-                                    fill="currentColor"
+                                <span>
+                                    {t(
+                                        "contactPlaceNote"
+                                    )}
+                                </span>
+                            </div>
+                        )}
+
+
+                    {/* =================================================
+                        VERIFICATION
+                    ================================================== */}
+
+                    {spot.verified && (
+                        <section
+                            className="nt-spot-verification"
+                        >
+                            <div
+                                className="nt-verification-icon"
+                            >
+                                <Check
+                                    size={18}
                                 />
-                            }
-                            label={
-                                french
-                                    ? "Avis"
-                                    : "Rating"
-                            }
-                            value={
-                                spot.rating
-                                    ? `${Number(
-                                        spot.rating
-                                    ).toFixed(
-                                        1
-                                    )} / 5`
-                                    : french
-                                        ? "Nouveau"
-                                        : "New"
-                            }
-                        />
-
-                        <QuickFact
-                            icon={
-                                <MapPin
-                                    size={16}
-                                />
-                            }
-                            label={
-                                french
-                                    ? "Emplacement"
-                                    : "Location"
-                            }
-                            value={
-                                spot.neighborhood ||
-                                spot.city ||
-                                "Yaoundé"
-                            }
-                        />
-
-                    </section>
+                            </div>
 
 
-                    {/* MAIN CONTENT */}
-
-                    <div className="nt-spot-content-grid">
-
-                        <section className="nt-spot-main-column">
-
-                            {/* ABOUT */}
-
-                            <SpotSection
-                                title={
-                                    french
-                                        ? "À propos"
-                                        : "About this place"
-                                }
-                            >
-                                <p className="nt-spot-description">
-                                    {spot.description ||
-                                        (french
-                                            ? "Une belle adresse découverte avec NiceThings."
-                                            : "A lovely place discovered through NiceThings.")}
-                                </p>
-
-                                <div className="nt-spot-category-pill">
-                                    <Sparkles
-                                        size={14}
-                                    />
-
-                                    {spot.category ||
-                                        (french
-                                            ? "Découverte"
-                                            : "Discovery")}
-                                </div>
-                            </SpotSection>
-
-
-                            {/* MENU */}
-
-                            <SpotSection
-                                title={
-                                    french
-                                        ? "Ce que vous pouvez manger"
-                                        : "What you can get"
-                                }
-                            >
-
-                                {Array.isArray(
-                                    spot.menu
-                                ) &&
-                                    spot.menu.length >
-                                    0 ? (
-                                    <div className="nt-menu-list">
-                                        {spot.menu.map(
-                                            (
-                                                item,
-                                                index
-                                            ) => (
-                                                <div
-                                                    className="nt-menu-item"
-                                                    key={
-                                                        item.id ||
-                                                        index
-                                                    }
-                                                >
-                                                    <div>
-                                                        <strong>
-                                                            {item.name}
-                                                        </strong>
-
-                                                        {item.description && (
-                                                            <span>
-                                                                {
-                                                                    item.description
-                                                                }
-                                                            </span>
-                                                        )}
-                                                    </div>
-
-                                                    <b>
-                                                        {Number(
-                                                            item.price
-                                                        ).toLocaleString()}{" "}
-                                                        FCFA
-                                                    </b>
-                                                </div>
-                                            )
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="nt-soft-empty">
-                                        {french
-                                            ? "Le menu détaillé sera bientôt disponible."
-                                            : "A detailed menu will be available soon."}
-                                    </div>
-                                )}
-
-                            </SpotSection>
-
-
-                            {/* HOURS */}
-
-                            <SpotSection
-                                title={
-                                    french
-                                        ? "Horaires"
-                                        : "Opening hours"
-                                }
-                            >
-
-                                <div className="nt-hours-card">
-
-                                    <div className="nt-hours-icon">
-                                        <Clock3
-                                            size={18}
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <strong>
-                                            {french
-                                                ? "Horaires habituels"
-                                                : "Regular hours"}
-                                        </strong>
-
-                                        <span>
-                                            {spot.opening_time &&
-                                                spot.closing_time
-                                                ? `${spot.opening_time} — ${spot.closing_time}`
-                                                : french
-                                                    ? "Horaires non vérifiés"
-                                                    : "Hours not verified"}
-                                        </span>
-                                    </div>
-
-                                </div>
-
-                            </SpotSection>
-
-
-                            {/* LOCATION */}
-
-                            <SpotSection
-                                title={
-                                    french
-                                        ? "Emplacement"
-                                        : "Location"
-                                }
-                            >
-
-                                <div className="nt-spot-location-card">
-
-                                    <div className="nt-location-map-placeholder">
-                                        <MapPin
-                                            size={28}
-                                        />
-
-                                        <span>
-                                            {spot.address ||
-                                                spot.neighborhood ||
-                                                spot.city ||
-                                                "Yaoundé"}
-                                        </span>
-                                    </div>
-
-                                    <div className="nt-spot-address">
-                                        <MapPin
-                                            size={16}
-                                        />
-
-                                        <span>
-                                            {spot.address ||
-                                                spot.neighborhood ||
-                                                spot.city ||
-                                                "Yaoundé"}
-                                        </span>
-                                    </div>
-
-                                </div>
-
-                            </SpotSection>
-
-                        </section>
-
-
-                        {/* SIDE ACTIONS */}
-
-                        <aside className="nt-spot-sidebar">
-
-                            <div className="nt-spot-action-card">
-
-                                <div className="nt-spot-action-eyebrow">
-                                    <Sparkles
-                                        size={13}
-                                    />
-
-                                    NiceThings
-                                </div>
-
-                                <h2>
-                                    {french
-                                        ? "Vous aimez ce spot ?"
-                                        : "Like this spot?"}
-                                </h2>
+                            <div>
+                                <strong>
+                                    {t(
+                                        "verified"
+                                    )}
+                                </strong>
 
                                 <p>
-                                    {french
-                                        ? "Ouvrez l'itinéraire et laissez votre téléphone vous guider."
-                                        : "Open directions and let your phone guide you there."}
+                                    {t(
+                                        "verifiedDescription"
+                                    )}
                                 </p>
-
-                                <a
-                                    href={
-                                        getGoogleMapsUrl()
-                                    }
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="nt-spot-primary-button"
-                                >
-                                    <Navigation
-                                        size={17}
-                                    />
-
-                                    {french
-                                        ? "Y aller"
-                                        : "Go there"}
-
-                                    <ExternalLink
-                                        size={14}
-                                    />
-                                </a>
-
                             </div>
+                        </section>
+                    )}
+                    {/* =================================================
+                        BACK TO RESULTS
+                    ================================================== */}
+
+                    <div
+                        className="nt-spot-bottom-actions"
+                    >
+                        <button
+                            type="button"
+                            className="nt-button-secondary"
+                            onClick={() =>
+                                window.history.back()
+                            }
+                        >
+                            <ArrowLeft
+                                size={17}
+                            />
+
+                            {t(
+                                "backToResults"
+                            )}
+                        </button>
 
 
-                            {/* SHARE */}
+                        <Link
+                            href="/find"
+                            className="nt-button-primary"
+                        >
+                            <SearchIcon />
 
-                            <div className="nt-spot-share-card">
-
-                                <div>
-                                    <strong>
-                                        {french
-                                            ? "Partager ce spot"
-                                            : "Share this spot"}
-                                    </strong>
-
-                                    <span>
-                                        {french
-                                            ? "Envoyez-le à vos amis."
-                                            : "Send it to your friends."}
-                                    </span>
-                                </div>
-
-                                <div className="nt-share-buttons">
-
-                                    <button
-                                        type="button"
-                                        onClick={
-                                            shareWhatsApp
-                                        }
-                                    >
-                                        <MessageCircle
-                                            size={16}
-                                        />
-
-                                        WhatsApp
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={
-                                            shareSpot
-                                        }
-                                    >
-                                        {copied ? (
-                                            <Check
-                                                size={16}
-                                            />
-                                        ) : (
-                                            <Share2
-                                                size={16}
-                                            />
-                                        )}
-
-                                        {copied
-                                            ? french
-                                                ? "Copié"
-                                                : "Copied"
-                                            : french
-                                                ? "Partager"
-                                                : "Share"}
-                                    </button>
-
-                                </div>
-
-                            </div>
-
-
-                            {/* ARRIVAL */}
-
-                            {searchId && (
-                                <Link
-                                    href={`/arrival/${searchId}`}
-                                    className="nt-arrival-link"
-                                >
-                                    <div>
-                                        <strong>
-                                            {french
-                                                ? "Vous êtes arrivé ?"
-                                                : "Did you arrive?"}
-                                        </strong>
-
-                                        <span>
-                                            {french
-                                                ? "Enregistrez votre découverte."
-                                                : "Record your discovery."}
-                                        </span>
-                                    </div>
-
-                                    <ArrowRight
-                                        size={17}
-                                    />
-                                </Link>
+                            {t(
+                                "findAnotherPlace"
                             )}
 
-                        </aside>
-
+                            <ArrowRight
+                                size={17}
+                            />
+                        </Link>
                     </div>
 
-                </div>
 
+                    {/* =================================================
+                        FOOTER
+                    ================================================== */}
+
+                    <footer
+                        className="nt-spot-footer"
+                    >
+                        <div>
+                            <Sparkles
+                                size={15}
+                            />
+
+                            <strong>
+                                NiceThings
+                            </strong>
+                        </div>
+
+                        <p>
+                            {t(
+                                "footerTagline"
+                            )}
+                        </p>
+                    </footer>
+
+                </div>
             </main>
         </AppShell>
     );
 }
 
 
-/* ============================================================
-   QUICK FACT
-============================================================ */
+/* =====================================================
+   SEARCH ICON
+===================================================== */
 
-function QuickFact({
-    icon,
-    label,
-    value,
-}) {
+function SearchIcon() {
     return (
-        <div className="nt-quick-fact">
+        <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <circle
+                cx="11"
+                cy="11"
+                r="7"
+            />
 
-            <div className="nt-quick-fact-icon">
-                {icon}
-            </div>
-
-            <div>
-                <span>
-                    {label}
-                </span>
-
-                <strong>
-                    {value}
-                </strong>
-            </div>
-
-        </div>
+            <path
+                d="m20 20-4-4"
+            />
+        </svg>
     );
 }
-
-
-/* ============================================================
-   SECTION
-============================================================ */
-
-function SpotSection({
-    title,
-    children,
+function HeartIcon({
+    filled = false,
 }) {
     return (
-        <section className="nt-spot-section">
-
-            <h2>
-                {title}
-            </h2>
-
-            {children}
-
-        </section>
+        <svg
+            width="19"
+            height="19"
+            viewBox="0 0 24 24"
+            fill={
+                filled
+                    ? "currentColor"
+                    : "none"
+            }
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path
+                d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"
+            />
+        </svg>
     );
 }

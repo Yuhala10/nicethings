@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+
 import {
     ArrowRight,
     LockKeyhole,
@@ -6,43 +7,99 @@ import {
     Sparkles,
 } from "lucide-react";
 
+import { useLanguage } from "../../lib/i18n";
+
+
 export default function AdminLogin() {
-    const [phone, setPhone] =
-        useState("");
+    const {
+        language,
+        setLanguage,
+    } = useLanguage();
 
-    const [code, setCode] =
-        useState("");
+    const [
+        phone,
+        setPhone,
+    ] = useState("");
 
-    const [loading, setLoading] =
-        useState(false);
+    const [
+        code,
+        setCode,
+    ] = useState("");
 
-    const [error, setError] =
-        useState("");
+    const [
+        loading,
+        setLoading,
+    ] = useState(false);
+
+    const [
+        checkingSession,
+        setCheckingSession,
+    ] = useState(true);
+
+    const [
+        error,
+        setError,
+    ] = useState("");
+
+
+    const french =
+        language === "fr";
+
+
+    /* =====================================================
+       CHECK EXISTING ADMIN SESSION
+    ====================================================== */
 
     useEffect(() => {
         checkExistingSession();
     }, []);
 
+
     async function checkExistingSession() {
         try {
             const response =
                 await fetch(
-                    "/api/admin/me"
+                    "/api/admin/me",
+                    {
+                        method:
+                            "GET",
+                        credentials:
+                            "include",
+                    }
                 );
+
 
             const data =
                 await response.json();
 
+
             if (
                 data.authenticated
             ) {
-                window.location.href =
-                    "/admin";
+                window.location.replace(
+                    "/admin"
+                );
+
+                return;
             }
-        } catch {
-            // Stay on login page.
+        } catch (
+        sessionError
+        ) {
+            console.error(
+                "Admin session check:",
+                sessionError
+            );
+        } finally {
+            setCheckingSession(
+                false
+            );
         }
     }
+
+
+    /* =====================================================
+       LOGIN
+    ====================================================== */
 
     async function handleLogin(
         event
@@ -51,138 +108,395 @@ export default function AdminLogin() {
 
         setError("");
 
+
+        const cleanPhone =
+            phone.trim();
+
+        const cleanCode =
+            code.trim();
+
+
         if (
-            !phone.trim() ||
-            !code.trim()
+            !cleanPhone ||
+            !cleanCode
         ) {
             setError(
-                "Enter your administrator phone number and code."
+                french
+                    ? "Entrez votre numéro administrateur et votre code."
+                    : "Enter your administrator phone number and code."
             );
 
             return;
         }
 
-        setLoading(true);
+
+        setLoading(
+            true
+        );
+
 
         try {
             const response =
                 await fetch(
                     "/api/admin/login",
                     {
-                        method: "POST",
+                        method:
+                            "POST",
+
                         headers: {
                             "Content-Type":
                                 "application/json",
                         },
-                        body: JSON.stringify({
-                            phone:
-                                phone.trim(),
-                            code:
-                                code.trim(),
-                        }),
+
+                        credentials:
+                            "include",
+
+                        body:
+                            JSON.stringify({
+                                phone:
+                                    cleanPhone,
+
+                                code:
+                                    cleanCode,
+                            }),
                     }
                 );
 
-            const data =
-                await response.json();
 
-            if (!response.ok) {
+            let data = {};
+
+            try {
+                data =
+                    await response.json();
+            } catch {
+                data = {};
+            }
+
+
+            if (
+                !response.ok
+            ) {
                 throw new Error(
                     data.error ||
-                    "Unable to sign in."
+                    (
+                        french
+                            ? "Impossible de vous connecter."
+                            : "Unable to sign in."
+                    )
                 );
             }
 
-            window.location.href =
-                "/admin";
-        } catch (error) {
+
+            window.location.replace(
+                "/admin"
+            );
+        } catch (
+        loginError
+        ) {
+            console.error(
+                "Admin login error:",
+                loginError
+            );
+
             setError(
-                error.message
+                loginError.message ||
+                (
+                    french
+                        ? "Impossible de vous connecter."
+                        : "Unable to sign in."
+                )
             );
         } finally {
-            setLoading(false);
+            setLoading(
+                false
+            );
         }
     }
 
+
+    /* =====================================================
+       SESSION CHECK SCREEN
+    ====================================================== */
+
+    if (
+        checkingSession
+    ) {
+        return (
+            <main
+                className="nt-admin-login"
+            >
+
+                <div
+                    className="nt-admin-login-glow"
+                />
+
+
+                <section
+                    className="nt-admin-login-card"
+                >
+
+                    <div
+                        className="nt-admin-brand-mark"
+                    >
+                        <Sparkles
+                            size={22}
+                        />
+                    </div>
+
+
+                    <div
+                        className="nt-admin-eyebrow"
+                    >
+
+                        <ShieldCheck
+                            size={13}
+                        />
+
+                        NiceThings Control
+
+                    </div>
+
+
+                    <p
+                        style={{
+                            marginTop:
+                                "20px",
+                        }}
+                    >
+                        {french
+                            ? "Vérification de votre session..."
+                            : "Checking your session..."}
+                    </p>
+
+                </section>
+
+            </main>
+        );
+    }
+
+
+    /* =====================================================
+       LOGIN PAGE
+    ====================================================== */
+
     return (
-        <main className="nt-admin-login">
+        <main
+            className="nt-admin-login"
+        >
 
-            <div className="nt-admin-login-glow" />
+            <div
+                className="nt-admin-login-glow"
+            />
 
-            <section className="nt-admin-login-card">
 
-                <div className="nt-admin-brand-mark">
+            <section
+                className="nt-admin-login-card"
+            >
+
+                {/* =========================================
+                    BRAND
+                ========================================== */}
+
+                <div
+                    className="nt-admin-brand-mark"
+                >
                     <Sparkles
                         size={22}
                     />
                 </div>
 
-                <div className="nt-admin-eyebrow">
+
+                <div
+                    className="nt-admin-eyebrow"
+                >
+
                     <ShieldCheck
                         size={13}
                     />
+
                     NiceThings Control
+
                 </div>
 
+
+                {/* =========================================
+                    LANGUAGE
+                ========================================== */}
+
+                <div
+                    className="nt-language-switch"
+                    style={{
+                        marginTop:
+                            "14px",
+                    }}
+                >
+
+                    <button
+                        type="button"
+                        className={
+                            language ===
+                                "en"
+                                ? "active"
+                                : ""
+                        }
+                        onClick={() =>
+                            setLanguage(
+                                "en"
+                            )
+                        }
+                        aria-pressed={
+                            language ===
+                            "en"
+                        }
+                    >
+                        EN
+                    </button>
+
+
+                    <button
+                        type="button"
+                        className={
+                            language ===
+                                "fr"
+                                ? "active"
+                                : ""
+                        }
+                        onClick={() =>
+                            setLanguage(
+                                "fr"
+                            )
+                        }
+                        aria-pressed={
+                            language ===
+                            "fr"
+                        }
+                    >
+                        FR
+                    </button>
+
+                </div>
+
+
+                {/* =========================================
+                    INTRO
+                ========================================== */}
+
                 <h1>
-                    Welcome back.
+                    {french
+                        ? "Bienvenue."
+                        : "Welcome back."}
                 </h1>
 
+
                 <p>
-                    Sign in securely to manage
-                    NiceThings.
+                    {french
+                        ? "Connectez-vous pour gérer NiceThings en toute sécurité."
+                        : "Sign in securely to manage NiceThings."}
                 </p>
+
+
+                {/* =========================================
+                    FORM
+                ========================================== */}
 
                 <form
                     onSubmit={
                         handleLogin
                     }
                 >
-                    <label>
-                        Administrator phone
+
+                    {/* PHONE */}
+
+                    <label
+                        htmlFor="admin-phone"
+                    >
+                        {french
+                            ? "Numéro administrateur"
+                            : "Administrator phone"}
                     </label>
 
+
                     <input
-                        value={phone}
-                        onChange={(event) =>
+                        id="admin-phone"
+                        value={
+                            phone
+                        }
+                        onChange={event =>
                             setPhone(
-                                event.target
+                                event
+                                    .target
                                     .value
                             )
                         }
                         placeholder="681731512"
                         inputMode="tel"
                         autoComplete="username"
+                        disabled={
+                            loading
+                        }
                     />
 
-                    <label>
-                        Administrator code
+
+                    {/* CODE */}
+
+                    <label
+                        htmlFor="admin-code"
+                    >
+                        {french
+                            ? "Code administrateur"
+                            : "Administrator code"}
                     </label>
 
-                    <div className="nt-admin-code-wrap">
+
+                    <div
+                        className="nt-admin-code-wrap"
+                    >
+
                         <LockKeyhole
                             size={17}
                         />
 
+
                         <input
-                            value={code}
-                            onChange={(event) =>
+                            id="admin-code"
+                            value={
+                                code
+                            }
+                            onChange={event =>
                                 setCode(
-                                    event.target
+                                    event
+                                        .target
                                         .value
                                 )
                             }
-                            placeholder="Private code"
+                            placeholder={
+                                french
+                                    ? "Code privé"
+                                    : "Private code"
+                            }
                             type="password"
                             autoComplete="current-password"
+                            disabled={
+                                loading
+                            }
                         />
+
                     </div>
 
+
+                    {/* ERROR */}
+
                     {error && (
-                        <div className="nt-admin-error">
+                        <div
+                            className="nt-admin-error"
+                            role="alert"
+                        >
                             {error}
                         </div>
                     )}
+
+
+                    {/* SUBMIT */}
 
                     <button
                         type="submit"
@@ -191,29 +505,50 @@ export default function AdminLogin() {
                             loading
                         }
                     >
+
                         {loading
-                            ? "Signing in..."
-                            : "Enter dashboard"}
+                            ? french
+                                ? "Connexion..."
+                                : "Signing in..."
+                            : french
+                                ? "Ouvrir le tableau de bord"
+                                : "Enter dashboard"}
+
 
                         {!loading && (
                             <ArrowRight
                                 size={17}
                             />
                         )}
+
                     </button>
+
                 </form>
 
-                <div className="nt-admin-login-footer">
+
+                {/* =========================================
+                    FOOTER
+                ========================================== */}
+
+                <div
+                    className="nt-admin-login-footer"
+                >
+
                     <span>
-                        Protected administrator
-                        area
+                        {french
+                            ? "Zone administrateur protégée"
+                            : "Protected administrator area"}
                     </span>
+
 
                     <span>
                         NiceThings
                     </span>
+
                 </div>
+
             </section>
+
         </main>
     );
 }

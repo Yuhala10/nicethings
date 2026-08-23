@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+
 import {
     CheckCircle2,
     Clock3,
@@ -12,22 +13,48 @@ import {
     XCircle,
 } from "lucide-react";
 
+import { useLanguage } from "../../lib/i18n";
+
+
 export default function AdminDashboard() {
-    const [loading, setLoading] =
-        useState(true);
+    const {
+        language,
+        setLanguage,
+    } = useLanguage();
 
-    const [payments, setPayments] =
-        useState([]);
+    const french =
+        language === "fr";
 
-    const [error, setError] =
-        useState("");
 
-    const [actionLoading, setActionLoading] =
-        useState("");
+    const [
+        loading,
+        setLoading,
+    ] = useState(true);
+
+    const [
+        payments,
+        setPayments,
+    ] = useState([]);
+
+    const [
+        error,
+        setError,
+    ] = useState("");
+
+    const [
+        actionLoading,
+        setActionLoading,
+    ] = useState("");
+
+
+    /* =====================================================
+       INITIALISE
+    ====================================================== */
 
     useEffect(() => {
         initialise();
     }, []);
+
 
     async function initialise() {
         try {
@@ -40,58 +67,123 @@ export default function AdminDashboard() {
                     }
                 );
 
-            const session =
-                await response.json();
+
+            let session = {};
+
+            try {
+                session =
+                    await response.json();
+            } catch {
+                session = {};
+            }
+
 
             if (
                 !session.authenticated
             ) {
-                window.location.href =
-                    "/admin/login";
+                window.location.replace(
+                    "/admin/login"
+                );
 
                 return;
             }
 
+
             await loadPayments();
-        } catch (error) {
+        } catch (
+        dashboardError
+        ) {
             console.error(
-                error
+                "Admin dashboard:",
+                dashboardError
             );
 
             setError(
-                "Unable to load the administrator dashboard."
+                french
+                    ? "Impossible de charger le tableau de bord."
+                    : "Unable to load the administrator dashboard."
             );
         } finally {
-            setLoading(false);
+            setLoading(
+                false
+            );
         }
     }
+
+
+    /* =====================================================
+       LOAD PAYMENTS
+    ====================================================== */
 
     async function loadPayments() {
         setError("");
 
-        const response =
-            await fetch(
-                "/api/admin/payments",
-                {
-                    credentials:
-                        "include",
-                }
+
+        try {
+            const response =
+                await fetch(
+                    "/api/admin/payments",
+                    {
+                        credentials:
+                            "include",
+                    }
+                );
+
+
+            let data = {};
+
+            try {
+                data =
+                    await response.json();
+            } catch {
+                data = {};
+            }
+
+
+            if (
+                !response.ok
+            ) {
+                throw new Error(
+                    data.error ||
+                    (
+                        french
+                            ? "Impossible de charger les paiements."
+                            : "Unable to load payments."
+                    )
+                );
+            }
+
+
+            setPayments(
+                Array.isArray(
+                    data.payments
+                )
+                    ? data.payments
+                    : []
+            );
+        } catch (
+        paymentError
+        ) {
+            console.error(
+                "Load payments:",
+                paymentError
             );
 
-        const data =
-            await response.json();
-
-        if (!response.ok) {
-            throw new Error(
-                data.error ||
-                "Unable to load payments."
+            setError(
+                paymentError.message ||
+                (
+                    french
+                        ? "Impossible de charger les paiements."
+                        : "Unable to load payments."
+                )
             );
         }
-
-        setPayments(
-            data.payments || []
-        );
     }
+
+
+    /* =====================================================
+       REVIEW PAYMENT
+    ====================================================== */
 
     async function reviewPayment(
         payment,
@@ -102,12 +194,14 @@ export default function AdminDashboard() {
             payment.id
         );
 
+
         try {
             const response =
                 await fetch(
                     "/api/admin/payments",
                     {
-                        method: "POST",
+                        method:
+                            "POST",
 
                         credentials:
                             "include",
@@ -117,44 +211,59 @@ export default function AdminDashboard() {
                                 "application/json",
                         },
 
-                        body: JSON.stringify({
-                            paymentId:
-                                payment.id,
+                        body:
+                            JSON.stringify({
+                                paymentId:
+                                    payment.id,
 
-                            decision,
+                                decision,
 
-                            adminNote,
-                        }),
+                                adminNote,
+                            }),
                     }
                 );
 
-            const data =
-                await response.json();
 
-            if (!response.ok) {
+            let data = {};
+
+            try {
+                data =
+                    await response.json();
+            } catch {
+                data = {};
+            }
+
+
+            if (
+                !response.ok
+            ) {
                 throw new Error(
                     data.error ||
-                    `Unable to ${decision ===
-                        "APPROVE"
-                        ? "approve"
-                        : "reject"
-                    } payment.`
+                    (
+                        french
+                            ? "Impossible de traiter le paiement."
+                            : "Unable to process payment."
+                    )
                 );
             }
+
 
             await loadPayments();
 
             return data;
-        } catch (error) {
+        } catch (
+        reviewError
+        ) {
             console.error(
-                error
+                "Payment review:",
+                reviewError
             );
 
-            alert(
-                error.message
+            setError(
+                reviewError.message
             );
 
-            throw error;
+            return null;
         } finally {
             setActionLoading(
                 ""
@@ -162,17 +271,26 @@ export default function AdminDashboard() {
         }
     }
 
+
+    /* =====================================================
+       APPROVE
+    ====================================================== */
+
     async function handleApprove(
         payment
     ) {
         const confirmed =
             window.confirm(
-                "Approve this 100 FCFA payment and activate 24-hour access?"
+                french
+                    ? "Approuver ce paiement de 100 FCFA et activer l'accès pendant 24 heures ?"
+                    : "Approve this 100 FCFA payment and activate 24-hour access?"
             );
+
 
         if (!confirmed) {
             return;
         }
+
 
         await reviewPayment(
             payment,
@@ -180,19 +298,28 @@ export default function AdminDashboard() {
         );
     }
 
+
+    /* =====================================================
+       REJECT
+    ====================================================== */
+
     async function handleReject(
         payment
     ) {
         const note =
             window.prompt(
-                "Optional reason for rejection:"
+                french
+                    ? "Motif du rejet (facultatif) :"
+                    : "Optional reason for rejection:"
             );
+
 
         if (
             note === null
         ) {
             return;
         }
+
 
         await reviewPayment(
             payment,
@@ -202,47 +329,72 @@ export default function AdminDashboard() {
         );
     }
 
+
+    /* =====================================================
+       LOGOUT
+    ====================================================== */
+
     async function handleLogout() {
         try {
             await fetch(
                 "/api/admin/logout",
                 {
-                    method: "POST",
+                    method:
+                        "POST",
 
                     credentials:
                         "include",
                 }
             );
+        } catch (
+        logoutError
+        ) {
+            console.error(
+                "Admin logout:",
+                logoutError
+            );
         } finally {
-            window.location.href =
-                "/admin/login";
+            window.location.replace(
+                "/admin/login"
+            );
         }
     }
 
+
+    /* =====================================================
+       STATS
+    ====================================================== */
+
     const pending =
         payments.filter(
-            (payment) =>
+            payment =>
                 payment.status ===
                 "PENDING"
         );
 
+
     const approved =
         payments.filter(
-            (payment) =>
+            payment =>
                 payment.status ===
                 "APPROVED"
         );
 
+
     const rejected =
         payments.filter(
-            (payment) =>
+            payment =>
                 payment.status ===
                 "REJECTED"
         );
 
+
     const revenue =
         approved.reduce(
-            (total, payment) =>
+            (
+                total,
+                payment
+            ) =>
                 total +
                 Number(
                     payment.amount ||
@@ -251,49 +403,143 @@ export default function AdminDashboard() {
             0
         );
 
-    if (loading) {
+
+    /* =====================================================
+       LOADING
+    ====================================================== */
+
+    if (
+        loading
+    ) {
         return (
-            <main className="nt-admin-page">
-                <div className="nt-admin-loading">
+            <main
+                className="nt-admin-page"
+            >
+
+                <div
+                    className="nt-admin-loading"
+                >
+
                     <Sparkles
                         size={28}
                     />
 
                     <p>
-                        Loading NiceThings
-                        Control...
+                        {french
+                            ? "Chargement de NiceThings Control..."
+                            : "Loading NiceThings Control..."}
                     </p>
+
                 </div>
+
             </main>
         );
     }
 
-    return (
-        <main className="nt-admin-page">
 
-            <header className="nt-admin-header">
+    /* =====================================================
+       DASHBOARD
+    ====================================================== */
+
+    return (
+        <main
+            className="nt-admin-page"
+        >
+
+            {/* =================================================
+                HEADER
+            ================================================== */}
+
+            <header
+                className="nt-admin-header"
+            >
 
                 <div>
-                    <div className="nt-admin-eyebrow">
+
+                    <div
+                        className="nt-admin-eyebrow"
+                    >
+
                         <ShieldCheck
                             size={13}
                         />
 
                         NiceThings Control
+
                     </div>
 
+
                     <h1>
-                        Good to see you.
+                        {french
+                            ? "Bienvenue."
+                            : "Good to see you."}
                     </h1>
 
+
                     <p>
-                        Manage payments,
-                        access and discovery
-                        activity.
+                        {french
+                            ? "Gérez les paiements, les accès et l'activité de découverte."
+                            : "Manage payments, access and discovery activity."}
                     </p>
+
                 </div>
 
-                <div className="nt-admin-header-actions">
+
+                <div
+                    className="nt-admin-header-actions"
+                >
+
+                    {/* LANGUAGE */}
+
+                    <div
+                        className="nt-language-switch"
+                    >
+
+                        <button
+                            type="button"
+                            className={
+                                language ===
+                                    "en"
+                                    ? "active"
+                                    : ""
+                            }
+                            onClick={() =>
+                                setLanguage(
+                                    "en"
+                                )
+                            }
+                            aria-pressed={
+                                language ===
+                                "en"
+                            }
+                        >
+                            EN
+                        </button>
+
+
+                        <button
+                            type="button"
+                            className={
+                                language ===
+                                    "fr"
+                                    ? "active"
+                                    : ""
+                            }
+                            onClick={() =>
+                                setLanguage(
+                                    "fr"
+                                )
+                            }
+                            aria-pressed={
+                                language ===
+                                "fr"
+                            }
+                        >
+                            FR
+                        </button>
+
+                    </div>
+
 
                     <button
                         type="button"
@@ -301,12 +547,24 @@ export default function AdminDashboard() {
                         onClick={
                             loadPayments
                         }
-                        title="Refresh"
+                        title={
+                            french
+                                ? "Actualiser"
+                                : "Refresh"
+                        }
+                        aria-label={
+                            french
+                                ? "Actualiser"
+                                : "Refresh"
+                        }
                     >
+
                         <RefreshCw
                             size={17}
                         />
+
                     </button>
+
 
                     <button
                         type="button"
@@ -315,18 +573,29 @@ export default function AdminDashboard() {
                             handleLogout
                         }
                     >
+
                         <LogOut
                             size={16}
                         />
 
-                        Logout
+                        {french
+                            ? "Déconnexion"
+                            : "Logout"}
+
                     </button>
 
                 </div>
 
             </header>
 
-            <section className="nt-admin-stats">
+
+            {/* =================================================
+                STATS
+            ================================================== */}
+
+            <section
+                className="nt-admin-stats"
+            >
 
                 <StatCard
                     icon={
@@ -334,11 +603,16 @@ export default function AdminDashboard() {
                             size={19}
                         />
                     }
-                    label="Pending"
+                    label={
+                        french
+                            ? "En attente"
+                            : "Pending"
+                    }
                     value={
                         pending.length
                     }
                 />
+
 
                 <StatCard
                     icon={
@@ -346,11 +620,16 @@ export default function AdminDashboard() {
                             size={19}
                         />
                     }
-                    label="Approved"
+                    label={
+                        french
+                            ? "Approuvés"
+                            : "Approved"
+                    }
                     value={
                         approved.length
                     }
                 />
+
 
                 <StatCard
                     icon={
@@ -358,11 +637,16 @@ export default function AdminDashboard() {
                             size={19}
                         />
                     }
-                    label="Rejected"
+                    label={
+                        french
+                            ? "Rejetés"
+                            : "Rejected"
+                    }
                     value={
                         rejected.length
                     }
                 />
+
 
                 <StatCard
                     icon={
@@ -370,78 +654,117 @@ export default function AdminDashboard() {
                             size={19}
                         />
                     }
-                    label="Revenue"
-                    value={`${revenue} FCFA`}
+                    label={
+                        french
+                            ? "Revenus"
+                            : "Revenue"
+                    }
+                    value={`${revenue.toLocaleString(
+                        "fr-FR"
+                    )} FCFA`}
                 />
 
             </section>
 
-            <section className="nt-admin-section">
 
-                <div className="nt-admin-section-header">
+            {/* =================================================
+                PAYMENT QUEUE
+            ================================================== */}
+
+            <section
+                className="nt-admin-section"
+            >
+
+                <div
+                    className="nt-admin-section-header"
+                >
 
                     <div>
 
-                        <div className="nt-admin-section-kicker">
-                            PAYMENT QUEUE
+                        <div
+                            className="nt-admin-section-kicker"
+                        >
+                            {french
+                                ? "FILE DES PAIEMENTS"
+                                : "PAYMENT QUEUE"}
                         </div>
 
+
                         <h2>
-                            Access requests
+                            {french
+                                ? "Demandes d'accès"
+                                : "Access requests"}
                         </h2>
 
+
                         <p>
-                            Verify 100 FCFA
-                            payments before
-                            activating 24-hour
-                            discovery access.
+                            {french
+                                ? "Vérifiez les paiements de 100 FCFA avant d'activer l'accès de 24 heures."
+                                : "Verify 100 FCFA payments before activating 24-hour discovery access."}
                         </p>
 
                     </div>
 
-                    <div className="nt-admin-pending-pill">
+
+                    <div
+                        className="nt-admin-pending-pill"
+                    >
+
                         <span />
 
                         {pending.length}{" "}
-                        pending
+
+                        {french
+                            ? "en attente"
+                            : "pending"}
+
                     </div>
 
                 </div>
 
+
                 {error && (
-                    <div className="nt-admin-error">
+                    <div
+                        className="nt-admin-error"
+                        role="alert"
+                    >
                         {error}
                     </div>
                 )}
 
+
                 {pending.length ===
                     0 ? (
-                    <div className="nt-admin-empty">
+                    <div
+                        className="nt-admin-empty"
+                    >
 
                         <CheckCircle2
                             size={27}
                         />
 
+
                         <h3>
-                            Everything is
-                            clear.
+                            {french
+                                ? "Tout est clair."
+                                : "Everything is clear."}
                         </h3>
 
+
                         <p>
-                            There are no
-                            pending payment
-                            requests right
-                            now.
+                            {french
+                                ? "Aucune demande de paiement n'est actuellement en attente."
+                                : "There are no pending payment requests right now."}
                         </p>
 
                     </div>
                 ) : (
-                    <div className="nt-admin-payment-list">
+                    <div
+                        className="nt-admin-payment-list"
+                    >
 
                         {pending.map(
-                            (
-                                payment
-                            ) => (
+                            payment => (
                                 <PaymentRow
                                     key={
                                         payment.id
@@ -452,6 +775,9 @@ export default function AdminDashboard() {
                                     loading={
                                         actionLoading ===
                                         payment.id
+                                    }
+                                    french={
+                                        french
                                     }
                                     onApprove={() =>
                                         handleApprove(
@@ -472,25 +798,44 @@ export default function AdminDashboard() {
 
             </section>
 
-            <section className="nt-admin-section">
 
-                <div className="nt-admin-section-header">
+            {/* =================================================
+                PLATFORM SNAPSHOT
+            ================================================== */}
+
+            <section
+                className="nt-admin-section"
+            >
+
+                <div
+                    className="nt-admin-section-header"
+                >
 
                     <div>
 
-                        <div className="nt-admin-section-kicker">
-                            PLATFORM
+                        <div
+                            className="nt-admin-section-kicker"
+                        >
+                            {french
+                                ? "PLATEFORME"
+                                : "PLATFORM"}
                         </div>
 
+
                         <h2>
-                            NiceThings snapshot
+                            {french
+                                ? "Aperçu de NiceThings"
+                                : "NiceThings snapshot"}
                         </h2>
 
                     </div>
 
                 </div>
 
-                <div className="nt-admin-snapshot-grid">
+
+                <div
+                    className="nt-admin-snapshot-grid"
+                >
 
                     <Snapshot
                         icon={
@@ -498,9 +843,18 @@ export default function AdminDashboard() {
                                 size={19}
                             />
                         }
-                        title="Visitors"
-                        text="Anonymous discovery sessions are connected to every access pass and search."
+                        title={
+                            french
+                                ? "Visiteurs"
+                                : "Visitors"
+                        }
+                        text={
+                            french
+                                ? "Les sessions anonymes sont associées aux accès et aux recherches."
+                                : "Anonymous discovery sessions are connected to access passes and searches."
+                        }
                     />
+
 
                     <Snapshot
                         icon={
@@ -508,9 +862,18 @@ export default function AdminDashboard() {
                                 size={19}
                             />
                         }
-                        title="Spots"
-                        text="Approved places are available to the discovery engine."
+                        title={
+                            french
+                                ? "Spots"
+                                : "Spots"
+                        }
+                        text={
+                            french
+                                ? "Les lieux approuvés sont disponibles dans le moteur de découverte."
+                                : "Approved places are available to the discovery engine."
+                        }
                     />
+
 
                     <Snapshot
                         icon={
@@ -518,22 +881,146 @@ export default function AdminDashboard() {
                                 size={19}
                             />
                         }
-                        title="Discoveries"
-                        text="Searches, selections and arrivals form the NiceThings discovery data."
+                        title={
+                            french
+                                ? "Découvertes"
+                                : "Discoveries"
+                        }
+                        text={
+                            french
+                                ? "Les recherches, sélections et arrivées forment les données de découverte."
+                                : "Searches, selections and arrivals form the NiceThings discovery data."
+                        }
                     />
 
                 </div>
 
             </section>
 
-            <footer className="nt-admin-footer">
-                NiceThings Control • Secure
-                administrator environment
+
+            {/* =================================================
+                ADMIN NAVIGATION
+            ================================================== */}
+
+            <section
+                className="nt-admin-section"
+            >
+
+                <div
+                    className="nt-admin-section-header"
+                >
+
+                    <div>
+
+                        <div
+                            className="nt-admin-section-kicker"
+                        >
+                            {french
+                                ? "GESTION"
+                                : "MANAGEMENT"}
+                        </div>
+
+
+                        <h2>
+                            {french
+                                ? "Administration"
+                                : "Administration"}
+                        </h2>
+
+                    </div>
+
+                </div>
+
+
+                <div
+                    className="nt-admin-snapshot-grid"
+                >
+
+                    <AdminLink
+                        href="/admin/payments"
+                        icon={
+                            <CreditCard
+                                size={19}
+                            />
+                        }
+                        title={
+                            french
+                                ? "Paiements"
+                                : "Payments"
+                        }
+                        text={
+                            french
+                                ? "Consulter et traiter les demandes de paiement."
+                                : "View and process payment requests."
+                        }
+                    />
+
+
+                    <AdminLink
+                        href="/admin/spots"
+                        icon={
+                            <MapPin
+                                size={19}
+                            />
+                        }
+                        title={
+                            french
+                                ? "Spots"
+                                : "Spots"
+                        }
+                        text={
+                            french
+                                ? "Gérer les lieux approuvés et leurs informations."
+                                : "Manage approved places and their information."
+                        }
+                    />
+
+
+                    <AdminLink
+                        href="/admin/submissions"
+                        icon={
+                            <Sparkles
+                                size={19}
+                            />
+                        }
+                        title={
+                            french
+                                ? "Soumissions"
+                                : "Submissions"
+                        }
+                        text={
+                            french
+                                ? "Examiner les nouveaux lieux proposés."
+                                : "Review newly submitted places."
+                        }
+                    />
+
+                </div>
+
+            </section>
+
+
+            {/* =================================================
+                FOOTER
+            ================================================== */}
+
+            <footer
+                className="nt-admin-footer"
+            >
+                NiceThings Control •{" "}
+                {french
+                    ? "environnement administrateur sécurisé"
+                    : "Secure administrator environment"}
             </footer>
 
         </main>
     );
 }
+
+
+/* =====================================================
+   STAT CARD
+====================================================== */
 
 function StatCard({
     icon,
@@ -541,17 +1028,23 @@ function StatCard({
     value,
 }) {
     return (
-        <div className="nt-admin-stat">
+        <div
+            className="nt-admin-stat"
+        >
 
-            <div className="nt-admin-stat-icon">
+            <div
+                className="nt-admin-stat-icon"
+            >
                 {icon}
             </div>
+
 
             <div>
 
                 <span>
                     {label}
                 </span>
+
 
                 <strong>
                     {value}
@@ -563,34 +1056,69 @@ function StatCard({
     );
 }
 
+
+/* =====================================================
+   PAYMENT ROW
+====================================================== */
+
 function PaymentRow({
     payment,
     loading,
+    french,
     onApprove,
     onReject,
 }) {
-    const [showProof, setShowProof] =
-        useState(false);
+    const [
+        showProof,
+        setShowProof,
+    ] = useState(false);
+
+
+    const createdAt =
+        payment.created_at
+            ? new Date(
+                payment.created_at
+            ).toLocaleString(
+                french
+                    ? "fr-FR"
+                    : "en-GB"
+            )
+            : "—";
+
 
     return (
-        <article className="nt-admin-payment">
+        <article
+            className="nt-admin-payment"
+        >
 
-            <div className="nt-admin-payment-top">
+            <div
+                className="nt-admin-payment-top"
+            >
 
                 <div>
 
-                    <div className="nt-admin-payment-amount">
-                        {payment.amount}{" "}
-                        {payment.currency}
+                    <div
+                        className="nt-admin-payment-amount"
+                    >
+                        {Number(
+                            payment.amount ||
+                            0
+                        ).toLocaleString(
+                            "fr-FR"
+                        )}{" "}
+                        {payment.currency ||
+                            "XAF"}
                     </div>
 
-                    <div className="nt-admin-payment-meta">
-                        {new Date(
-                            payment.created_at
-                        ).toLocaleString()}
+
+                    <div
+                        className="nt-admin-payment-meta"
+                    >
+                        {createdAt}
                     </div>
 
                 </div>
+
 
                 <span
                     className={`nt-admin-status ${String(
@@ -603,13 +1131,19 @@ function PaymentRow({
 
             </div>
 
-            <div className="nt-admin-payment-info">
+
+            <div
+                className="nt-admin-payment-info"
+            >
 
                 <div>
 
                     <span>
-                        Visitor
+                        {french
+                            ? "Visiteur"
+                            : "Visitor"}
                     </span>
+
 
                     <strong>
                         {payment.visitor_id}
@@ -617,11 +1151,15 @@ function PaymentRow({
 
                 </div>
 
+
                 <div>
 
                     <span>
-                        Payment ID
+                        {french
+                            ? "ID paiement"
+                            : "Payment ID"}
                     </span>
+
 
                     <strong>
                         {payment.id}
@@ -631,6 +1169,11 @@ function PaymentRow({
 
             </div>
 
+
+            {/* =============================================
+                PROOF
+            ============================================== */}
+
             {payment.proofUrl ? (
                 <>
                     <button
@@ -638,54 +1181,84 @@ function PaymentRow({
                         className="nt-admin-proof"
                         onClick={() =>
                             setShowProof(
-                                (value) =>
+                                value =>
                                     !value
                             )
                         }
                     >
+
                         <ShieldCheck
                             size={16}
                         />
 
+
                         <span>
                             {showProof
-                                ? "Hide payment proof"
-                                : "View payment proof"}
+                                ? french
+                                    ? "Masquer la preuve"
+                                    : "Hide payment proof"
+                                : french
+                                    ? "Voir la preuve de paiement"
+                                    : "View payment proof"}
                         </span>
+
                     </button>
 
+
                     {showProof && (
-                        <div className="nt-admin-proof-viewer">
+                        <div
+                            className="nt-admin-proof-viewer"
+                        >
+
                             <img
                                 src={
                                     payment.proofUrl
                                 }
-                                alt="Payment proof"
+                                alt={
+                                    french
+                                        ? "Preuve de paiement"
+                                        : "Payment proof"
+                                }
                             />
+
                         </div>
                     )}
                 </>
             ) : (
-                <div className="nt-admin-proof missing">
+                <div
+                    className="nt-admin-proof missing"
+                >
 
                     <Clock3
                         size={16}
                     />
 
+
                     <span>
-                        Payment proof not
-                        uploaded yet
+                        {french
+                            ? "Aucune preuve de paiement"
+                            : "Payment proof not uploaded yet"}
                     </span>
 
                 </div>
             )}
 
+
+            {/* =============================================
+                ADMIN NOTE
+            ============================================== */}
+
             {payment.admin_note && (
-                <div className="nt-admin-note">
+                <div
+                    className="nt-admin-note"
+                >
 
                     <strong>
-                        Admin note
+                        {french
+                            ? "Note administrateur"
+                            : "Admin note"}
                     </strong>
+
 
                     <p>
                         {
@@ -696,9 +1269,16 @@ function PaymentRow({
                 </div>
             )}
 
+
+            {/* =============================================
+                ACTIONS
+            ============================================== */}
+
             {payment.status ===
                 "PENDING" && (
-                    <div className="nt-admin-payment-actions">
+                    <div
+                        className="nt-admin-payment-actions"
+                    >
 
                         <button
                             type="button"
@@ -710,12 +1290,18 @@ function PaymentRow({
                                 onReject
                             }
                         >
+
                             <XCircle
                                 size={16}
                             />
 
-                            Reject
+
+                            {french
+                                ? "Rejeter"
+                                : "Reject"}
+
                         </button>
+
 
                         <button
                             type="button"
@@ -728,6 +1314,7 @@ function PaymentRow({
                                 onApprove
                             }
                         >
+
                             {loading ? (
                                 <RefreshCw
                                     size={16}
@@ -739,9 +1326,15 @@ function PaymentRow({
                                 />
                             )}
 
+
                             {loading
-                                ? "Processing..."
-                                : "Approve & activate"}
+                                ? french
+                                    ? "Traitement..."
+                                    : "Processing..."
+                                : french
+                                    ? "Approuver et activer"
+                                    : "Approve & activate"}
+
                         </button>
 
                     </div>
@@ -751,26 +1344,74 @@ function PaymentRow({
     );
 }
 
+
+/* =====================================================
+   SNAPSHOT
+====================================================== */
+
 function Snapshot({
     icon,
     title,
     text,
 }) {
     return (
-        <div className="nt-admin-snapshot">
+        <div
+            className="nt-admin-snapshot"
+        >
 
-            <div className="nt-admin-stat-icon">
+            <div
+                className="nt-admin-stat-icon"
+            >
                 {icon}
             </div>
+
 
             <h3>
                 {title}
             </h3>
+
 
             <p>
                 {text}
             </p>
 
         </div>
+    );
+}
+
+
+/* =====================================================
+   ADMIN LINK
+====================================================== */
+
+function AdminLink({
+    href,
+    icon,
+    title,
+    text,
+}) {
+    return (
+        <a
+            href={href}
+            className="nt-admin-snapshot nt-admin-management-link"
+        >
+
+            <div
+                className="nt-admin-stat-icon"
+            >
+                {icon}
+            </div>
+
+
+            <h3>
+                {title}
+            </h3>
+
+
+            <p>
+                {text}
+            </p>
+
+        </a>
     );
 }

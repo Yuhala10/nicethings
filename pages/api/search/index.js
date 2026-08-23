@@ -1,14 +1,18 @@
 import supabaseAdmin from "../../../lib/supabaseAdmin";
 import { rankSpots } from "../../../lib/matching";
+import {
+    isLaunchFree,
+} from "../../../lib/access";
+import {
+    getAdminCookie,
+    verifyAdminToken,
+} from "../../../lib/adminAuth";
 
 export default async function handler(
     req,
     res
 ) {
-    if (
-        req.method !==
-        "POST"
-    ) {
+    if (req.method !== "POST") {
         return res.status(405).json({
             error:
                 "Method not allowed.",
@@ -25,86 +29,126 @@ export default async function handler(
             people,
             category,
             language = "en",
-        } =
-            req.body || {};
+        } = req.body || {};
 
         if (!visitorId) {
             return res.status(400).json({
                 error:
-                    "Visitor session is required.",
+                    language === "fr"
+                        ? "Votre session est introuvable."
+                        : "Your session is missing.",
             });
         }
 
         /*
-         * Access verification happens
-         * on the server.
+         * ADMIN ACCESS
+         *
+         * Admin authentication is based on
+         * the protected server-side cookie.
+         *
+         * Admin never needs to pay.
          */
+        const adminToken =
+            getAdminCookie(req);
 
-        const {
-            data: access,
-            error: accessError,
-        } =
-            await supabaseAdmin
-                .from(
-                    "nt_access_passes"
-                )
-                .select(
-                    "id,expires_at"
-                )
-                .eq(
-                    "visitor_id",
-                    visitorId
-                )
-                .eq(
-                    "status",
-                    "ACTIVE"
-                )
-                .gt(
-                    "expires_at",
-                    new Date().toISOString()
-                )
-                .order(
-                    "expires_at",
-                    {
-                        ascending:
-                            false,
-                    }
-                )
-                .limit(1)
-                .maybeSingle();
-
-        if (accessError) {
-            console.error(
-                accessError
+        const admin =
+            verifyAdminToken(
+                adminToken
             );
 
-            return res.status(500).json({
-                error:
-                    "Unable to verify access.",
-            });
-        }
+        /*
+         * LAUNCH WEEK
+         *
+         * Everyone gets free discovery
+         * until the configured launch date.
+         */
+        const launchFree =
+            isLaunchFree();
 
-        if (!access) {
-            return res.status(403).json({
-                error:
-                    "Your NiceThings access has expired or has not been activated.",
-                accessRequired:
-                    true,
-            });
+        let access = null;
+
+        /*
+         * AFTER LAUNCH:
+         *
+         * Only normal users need an
+         * active 24-hour access pass.
+         */
+        if (
+            !launchFree &&
+            !admin
+        ) {
+            const {
+                data: activeAccess,
+                error: accessError,
+            } =
+                await supabaseAdmin
+                    .from(
+                        "nt_access_passes"
+                    )
+                    .select(
+                        "id,expires_at"
+                    )
+                    .eq(
+                        "visitor_id",
+                        visitorId
+                    )
+                    .eq(
+                        "status",
+                        "ACTIVE"
+                    )
+                    .gt(
+                        "expires_at",
+                        new Date().toISOString()
+                    )
+                    .order(
+                        "expires_at",
+                        {
+                            ascending:
+                                false,
+                        }
+                    )
+                    .limit(1)
+                    .maybeSingle();
+
+            if (accessError) {
+                console.error(
+                    "Access check:",
+                    accessError
+                );
+
+                return res.status(500).json({
+                    error:
+                        language === "fr"
+                            ? "Impossible de vérifier votre accès."
+                            : "Unable to verify your access.",
+                });
+            }
+
+            if (!activeAccess) {
+                return res.status(403).json({
+                    error:
+                        language === "fr"
+                            ? "Votre accès découverte a expiré."
+                            : "Your discovery access has expired.",
+
+                    accessRequired:
+                        true,
+                });
+            }
+
+            access =
+                activeAccess;
         }
 
         /*
-         * Retrieve approved spots.
+         * Get approved places.
          */
-
         const {
             data: spots,
             error: spotsError,
         } =
             await supabaseAdmin
-                .from(
-                    "nt_spots"
-                )
+                .from("nt_spots")
                 .select(`
                     id,
                     name,
@@ -140,19 +184,26 @@ export default async function handler(
 
         if (spotsError) {
             console.error(
+                "Spots:",
                 spotsError
             );
 
             return res.status(500).json({
                 error:
-                    "Unable to find spots.",
+                    language === "fr"
+                        ? "Impossible de trouver des endroits."
+                        : "Unable to find places.",
             });
         }
 
         /*
-         * Rank the places.
+         * Rank places using:
+         * budget
+         * category
+         * distance
+         * verification
+         * rating
          */
-
         const ranked =
             rankSpots(
                 spots || [],
@@ -163,6 +214,10 @@ export default async function handler(
 
                     longitude:
                         longitude ??
+                        null,
+
+                    locationText:
+                        locationText ||
                         null,
 
                     budget:
@@ -181,33 +236,29 @@ export default async function handler(
                 }
             );
 
-        /*
-         * Keep the experience focused.
-         *
-         * We don't overwhelm the user
-         * with dozens of places.
-         */
-
         const results =
             ranked
-                .slice(
-                    0,
-                    10
-                )
+                .slice(0, 10)
                 .map(
                     (spot) => ({
                         ...spot,
 
                         distanceKm:
                             spot.match
-                                .distanceKm,
+                                ?.distanceKm ??
+                            null,
                     })
                 );
 
         /*
-         * Record the search.
+         * Record search.
+         *
+         * During free launch week,
+         * access_pass_id remains null.
+         *
+         * Admin searches also remain
+         * independent of paid access.
          */
-
         const {
             data: search,
             error: searchError,
@@ -221,7 +272,8 @@ export default async function handler(
                         visitorId,
 
                     access_pass_id:
-                        access.id,
+                        access?.id ??
+                        null,
 
                     location_text:
                         locationText ||
@@ -255,14 +307,12 @@ export default async function handler(
                             ? "fr"
                             : "en",
                 })
-                .select(
-                    "id"
-                )
+                .select("id")
                 .single();
 
         if (searchError) {
             console.error(
-                "Search record error:",
+                "Search record:",
                 searchError
             );
         }
@@ -273,7 +323,12 @@ export default async function handler(
                 null,
 
             accessExpiresAt:
-                access.expires_at,
+                access?.expires_at ??
+                null,
+
+            launchFree,
+
+            admin,
 
             results,
         });
@@ -285,7 +340,7 @@ export default async function handler(
 
         return res.status(500).json({
             error:
-                "Something went wrong while finding your spots.",
+                "Something went wrong while finding your places.",
         });
     }
 }

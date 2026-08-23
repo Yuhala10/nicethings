@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+
 import {
     Check,
     MapPin,
@@ -8,10 +9,14 @@ import {
 } from "lucide-react";
 
 import AppShell from "../../components/layout/AppShell";
+import { useLanguage } from "../../lib/i18n";
+
 
 export default function ArrivalPage() {
-    const [language, setLanguage] =
-        useState("en");
+    const {
+        language,
+        setLanguage,
+    } = useLanguage();
 
     const [search, setSearch] =
         useState(null);
@@ -25,11 +30,15 @@ export default function ArrivalPage() {
     const [comment, setComment] =
         useState("");
 
-    const [priceAccurate, setPriceAccurate] =
-        useState(null);
+    const [
+        priceAccurate,
+        setPriceAccurate,
+    ] = useState(null);
 
-    const [locationAccurate, setLocationAccurate] =
-        useState(null);
+    const [
+        locationAccurate,
+        setLocationAccurate,
+    ] = useState(null);
 
     const [submitted, setSubmitted] =
         useState(false);
@@ -43,19 +52,17 @@ export default function ArrivalPage() {
     const french =
         language === "fr";
 
-    useEffect(() => {
-        const savedLanguage =
-            localStorage.getItem(
-                "nicethings_language"
-            );
 
+    /* =====================================================
+       LOAD SELECTED SPOT
+    ====================================================== */
+
+    useEffect(() => {
         if (
-            savedLanguage === "fr" ||
-            savedLanguage === "en"
+            typeof window ===
+            "undefined"
         ) {
-            setLanguage(
-                savedLanguage
-            );
+            return;
         }
 
         const saved =
@@ -69,21 +76,42 @@ export default function ArrivalPage() {
 
         try {
             const parsed =
-                JSON.parse(saved);
+                JSON.parse(
+                    saved
+                );
 
-            setSpot(
+            if (
+                parsed &&
                 parsed.spot
-            );
+            ) {
+                setSpot(
+                    parsed.spot
+                );
+            }
 
             setSearch(
                 parsed
             );
-        } catch (error) {
+        } catch (
+        loadError
+        ) {
             console.error(
-                error
+                "Arrival session error:",
+                loadError
+            );
+
+            setError(
+                french
+                    ? "Impossible de charger cette découverte."
+                    : "Unable to load this discovery."
             );
         }
-    }, []);
+    }, [french]);
+
+
+    /* =====================================================
+       SUBMIT ARRIVAL + REVIEW
+    ====================================================== */
 
     async function submit() {
         setError("");
@@ -103,6 +131,7 @@ export default function ArrivalPage() {
                 "nicethings_visitor_id"
             );
 
+
         if (
             !visitorId ||
             !search?.searchId ||
@@ -117,83 +146,143 @@ export default function ArrivalPage() {
             return;
         }
 
+
         setLoading(true);
 
+
         try {
+            /* =============================================
+               ARRIVAL
+            ============================================== */
+
             const arrivalResponse =
                 await fetch(
                     "/api/arrival",
                     {
-                        method: "POST",
+                        method:
+                            "POST",
+
                         headers: {
                             "Content-Type":
                                 "application/json",
                         },
-                        body: JSON.stringify({
-                            visitorId,
-                            searchId:
-                                search.searchId,
-                            spotId:
-                                spot.id,
-                        }),
+
+                        body:
+                            JSON.stringify({
+                                visitorId,
+                                searchId:
+                                    search.searchId,
+                                spotId:
+                                    spot.id,
+                            }),
                     }
                 );
 
-            const arrivalData =
-                await arrivalResponse.json();
+
+            let arrivalData =
+                {};
+
+            try {
+                arrivalData =
+                    await arrivalResponse.json();
+            } catch {
+                arrivalData =
+                    {};
+            }
+
 
             if (
                 !arrivalResponse.ok
             ) {
                 throw new Error(
-                    arrivalData.error
+                    arrivalData.error ||
+                    (
+                        french
+                            ? "Impossible d'enregistrer votre arrivée."
+                            : "Unable to record your arrival."
+                    )
                 );
             }
+
+
+            /* =============================================
+               REVIEW
+            ============================================== */
 
             const reviewResponse =
                 await fetch(
                     "/api/reviews",
                     {
-                        method: "POST",
+                        method:
+                            "POST",
+
                         headers: {
                             "Content-Type":
                                 "application/json",
                         },
-                        body: JSON.stringify({
-                            visitorId,
-                            spotId:
-                                spot.id,
-                            arrivalId:
-                                arrivalData.arrivalId,
-                            rating,
-                            comment,
-                            priceAccurate,
-                            locationAccurate,
-                        }),
+
+                        body:
+                            JSON.stringify({
+                                visitorId,
+
+                                spotId:
+                                    spot.id,
+
+                                arrivalId:
+                                    arrivalData.arrivalId,
+
+                                rating,
+
+                                comment:
+                                    comment.trim(),
+
+                                priceAccurate,
+
+                                locationAccurate,
+                            }),
                     }
                 );
 
-            const reviewData =
-                await reviewResponse.json();
+
+            let reviewData =
+                {};
+
+            try {
+                reviewData =
+                    await reviewResponse.json();
+            } catch {
+                reviewData =
+                    {};
+            }
+
 
             if (
                 !reviewResponse.ok
             ) {
                 throw new Error(
-                    reviewData.error
+                    reviewData.error ||
+                    (
+                        french
+                            ? "Impossible d'enregistrer votre avis."
+                            : "Unable to save your review."
+                    )
                 );
             }
+
 
             setSubmitted(
                 true
             );
-        } catch (error) {
+        } catch (
+        submitError
+        ) {
             console.error(
-                error
+                "Arrival/review error:",
+                submitError
             );
 
             setError(
-                error.message ||
+                submitError.message ||
                 (
                     french
                         ? "Impossible d'enregistrer votre avis."
@@ -201,29 +290,129 @@ export default function ArrivalPage() {
                 )
             );
         } finally {
-            setLoading(false);
+            setLoading(
+                false
+            );
         }
     }
 
-    if (submitted) {
+
+    /* =====================================================
+       INVALID / MISSING ARRIVAL
+    ====================================================== */
+
+    if (
+        !spot ||
+        !search?.searchId
+    ) {
         return (
             <AppShell>
-                <main className="nt-arrival-page">
-                    <div className="nt-arrival-success">
 
-                        <div className="nt-success-icon">
+                <main
+                    className="nt-arrival-page"
+                >
+
+                    <div
+                        className="nt-arrival-shell"
+                    >
+
+                        <div
+                            className="nt-arrival-card"
+                        >
+
+                            <div
+                                className="nt-arrival-spot-icon"
+                            >
+                                <MapPin
+                                    size={25}
+                                />
+                            </div>
+
+
+                            <span
+                                className="nt-arrival-label"
+                            >
+                                NiceThings
+                            </span>
+
+
+                            <h1>
+                                {french
+                                    ? "Découverte introuvable"
+                                    : "Discovery not found"}
+                            </h1>
+
+
+                            <p>
+                                {french
+                                    ? "Cette arrivée ne contient plus les informations nécessaires. Retournez à la recherche pour continuer."
+                                    : "This arrival no longer contains the information needed. Return to search to continue."}
+                            </p>
+
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    window.location.href =
+                                        "/find";
+                                }}
+                                className="nt-arrival-primary"
+                            >
+                                {french
+                                    ? "Retour à la recherche"
+                                    : "Back to search"}
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </main>
+
+            </AppShell>
+        );
+    }
+
+
+    /* =====================================================
+       SUCCESS
+    ====================================================== */
+
+    if (
+        submitted
+    ) {
+        return (
+            <AppShell>
+
+                <main
+                    className="nt-arrival-page"
+                >
+
+                    <div
+                        className="nt-arrival-success"
+                    >
+
+                        <div
+                            className="nt-success-icon"
+                        >
                             <Check
                                 size={30}
                             />
                         </div>
 
-                        <span className="nt-success-eyebrow">
+
+                        <span
+                            className="nt-success-eyebrow"
+                        >
+
                             <Sparkles
                                 size={13}
                             />
 
                             NiceThings
+
                         </span>
+
 
                         <h1>
                             {french
@@ -231,18 +420,20 @@ export default function ArrivalPage() {
                                 : "Thank you for discovering with us."}
                         </h1>
 
+
                         <p>
                             {french
                                 ? "Votre retour aide NiceThings à devenir plus précis et plus utile."
                                 : "Your feedback helps NiceThings become more accurate and useful."}
                         </p>
 
+
                         <button
                             type="button"
-                            onClick={() =>
+                            onClick={() => {
                                 window.location.href =
-                                "/find"
-                            }
+                                    "/find";
+                            }}
                             className="nt-arrival-primary"
                         >
                             {french
@@ -251,43 +442,68 @@ export default function ArrivalPage() {
                         </button>
 
                     </div>
+
                 </main>
+
             </AppShell>
         );
     }
 
+
+    /* =====================================================
+       REVIEW FORM
+    ====================================================== */
+
     return (
         <AppShell>
-            <main className="nt-arrival-page">
 
-                <div className="nt-arrival-shell">
+            <main
+                className="nt-arrival-page"
+            >
 
-                    <div className="nt-arrival-top">
+                <div
+                    className="nt-arrival-shell"
+                >
+
+                    <div
+                        className="nt-arrival-top"
+                    >
+
                         <Sparkles
                             size={17}
                         />
 
                         NiceThings
+
                     </div>
 
-                    <div className="nt-arrival-card">
 
-                        <div className="nt-arrival-spot-icon">
+                    <div
+                        className="nt-arrival-card"
+                    >
+
+                        <div
+                            className="nt-arrival-spot-icon"
+                        >
                             <MapPin
                                 size={25}
                             />
                         </div>
 
-                        <span className="nt-arrival-label">
+
+                        <span
+                            className="nt-arrival-label"
+                        >
                             {french
                                 ? "Votre découverte"
                                 : "Your discovery"}
                         </span>
 
+
                         <h1>
-                            {spot?.name ||
-                                "NiceThings spot"}
+                            {spot.name}
                         </h1>
+
 
                         <p>
                             {french
@@ -295,10 +511,30 @@ export default function ArrivalPage() {
                                 : "Did you make it there? Tell us how it was."}
                         </p>
 
-                        <div className="nt-rating">
 
-                            {[1, 2, 3, 4, 5].map(
-                                (value) => (
+                        {/* =========================================
+                            RATING
+                        ========================================== */}
+
+                        <div
+                            className="nt-rating"
+                            role="radiogroup"
+                            aria-label={
+                                french
+                                    ? "Note"
+                                    : "Rating"
+                            }
+                        >
+
+                            {[
+                                1,
+                                2,
+                                3,
+                                4,
+                                5,
+                            ].map(
+                                value => (
+
                                     <button
                                         type="button"
                                         key={
@@ -315,8 +551,17 @@ export default function ArrivalPage() {
                                                 value
                                             )
                                         }
-                                        aria-label={`${value} stars`}
+                                        aria-label={`${value} ${value ===
+                                                1
+                                                ? "star"
+                                                : "stars"
+                                            }`}
+                                        aria-pressed={
+                                            value ===
+                                            rating
+                                        }
                                     >
+
                                         <Star
                                             size={27}
                                             fill={
@@ -326,17 +571,23 @@ export default function ArrivalPage() {
                                                     : "none"
                                             }
                                         />
+
                                     </button>
                                 )
                             )}
 
                         </div>
 
+
+                        {/* =========================================
+                            COMMENT
+                        ========================================== */}
+
                         <textarea
                             value={
                                 comment
                             }
-                            onChange={(event) =>
+                            onChange={event =>
                                 setComment(
                                     event
                                         .target
@@ -348,9 +599,19 @@ export default function ArrivalPage() {
                                     ? "Un petit mot ? (facultatif)"
                                     : "Anything you'd like to say? (optional)"
                             }
+                            maxLength={
+                                1000
+                            }
                         />
 
-                        <div className="nt-accuracy">
+
+                        {/* =========================================
+                            ACCURACY
+                        ========================================== */}
+
+                        <div
+                            className="nt-accuracy"
+                        >
 
                             <AccuracyQuestion
                                 title={
@@ -368,6 +629,7 @@ export default function ArrivalPage() {
                                     french
                                 }
                             />
+
 
                             <AccuracyQuestion
                                 title={
@@ -388,11 +650,16 @@ export default function ArrivalPage() {
 
                         </div>
 
+
                         {error && (
-                            <div className="nt-arrival-error">
+                            <div
+                                className="nt-arrival-error"
+                                role="alert"
+                            >
                                 {error}
                             </div>
                         )}
+
 
                         <button
                             type="button"
@@ -404,6 +671,7 @@ export default function ArrivalPage() {
                             }
                             className="nt-arrival-primary"
                         >
+
                             {loading
                                 ? french
                                     ? "Enregistrement..."
@@ -412,9 +680,11 @@ export default function ArrivalPage() {
                                     ? "Envoyer mon avis"
                                     : "Send my feedback"}
 
+
                             <Send
                                 size={16}
                             />
+
                         </button>
 
                     </div>
@@ -422,9 +692,15 @@ export default function ArrivalPage() {
                 </div>
 
             </main>
+
         </AppShell>
     );
 }
+
+
+/* =====================================================
+   ACCURACY QUESTION
+====================================================== */
 
 function AccuracyQuestion({
     title,
@@ -433,17 +709,22 @@ function AccuracyQuestion({
     french,
 }) {
     return (
-        <div className="nt-accuracy-question">
+        <div
+            className="nt-accuracy-question"
+        >
 
             <strong>
                 {title}
             </strong>
 
+
             <div>
+
                 <button
                     type="button"
                     className={
-                        value === true
+                        value ===
+                            true
                             ? "active"
                             : ""
                     }
@@ -452,16 +733,22 @@ function AccuracyQuestion({
                             true
                         )
                     }
+                    aria-pressed={
+                        value ===
+                        true
+                    }
                 >
                     {french
                         ? "Oui"
                         : "Yes"}
                 </button>
 
+
                 <button
                     type="button"
                     className={
-                        value === false
+                        value ===
+                            false
                             ? "active"
                             : ""
                     }
@@ -470,11 +757,16 @@ function AccuracyQuestion({
                             false
                         )
                     }
+                    aria-pressed={
+                        value ===
+                        false
+                    }
                 >
                     {french
                         ? "Non"
                         : "No"}
                 </button>
+
             </div>
 
         </div>

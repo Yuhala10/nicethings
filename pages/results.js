@@ -1,179 +1,196 @@
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import {
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
+
 import {
     ArrowLeft,
     ArrowRight,
     Clock3,
-    Map,
     MapPin,
     Navigation,
-    RefreshCw,
     Search,
     Sparkles,
     Star,
 } from "lucide-react";
 
 import AppShell from "../components/layout/AppShell";
-import { formatDistance } from "../lib/distance";
+import { useLanguage } from "../lib/i18n";
+import { NICE_THINGS } from "../lib/constants";
+
 
 export default function ResultsPage() {
-    const [language, setLanguage] =
-        useState("en");
+    const {
+        language,
+        setLanguage,
+        t,
+    } = useLanguage();
 
-    const [search, setSearch] =
-        useState(null);
 
-    const [view, setView] =
-        useState("list");
+    /* =====================================================
+       SEARCH DATA
+    ====================================================== */
 
-    const [loading, setLoading] =
-        useState(true);
+    const [
+        search,
+        setSearch,
+    ] = useState(null);
 
-    const [error, setError] =
-        useState("");
+    const [
+        loading,
+        setLoading,
+    ] = useState(true);
 
-    const french =
-        language === "fr";
+    const [
+        error,
+        setError,
+    ] = useState("");
+
+
+    /* =====================================================
+       VIEW
+    ====================================================== */
+
+    const [
+        view,
+        setView,
+    ] = useState("list");
+
+
+    /* =====================================================
+       LOAD SEARCH
+    ====================================================== */
 
     useEffect(() => {
-        const saved =
-            sessionStorage.getItem(
-                "nicethings_search"
-            );
-
-        if (!saved) {
-            window.location.href =
-                "/find";
-
-            return;
-        }
-
         try {
-            const parsed =
-                JSON.parse(saved);
+            const raw =
+                sessionStorage.getItem(
+                    "nicethings_search"
+                );
 
-            setSearch(parsed);
+
+            if (!raw) {
+                setError(
+                    t(
+                        "resultsNotFound"
+                    )
+                );
+
+                return;
+            }
+
+
+            const parsed =
+                JSON.parse(
+                    raw
+                );
+
 
             if (
-                parsed.language ===
-                "fr" ||
-                parsed.language ===
-                "en"
+                !parsed ||
+                !Array.isArray(
+                    parsed.results
+                )
             ) {
-                setLanguage(
-                    parsed.language
+                throw new Error(
+                    "Invalid search data."
                 );
             }
-        } catch (error) {
-            console.error(error);
+
+
+            setSearch(
+                parsed
+            );
+        } catch (
+        loadError
+        ) {
+            console.error(
+                "NiceThings results error:",
+                loadError
+            );
 
             setError(
-                french
-                    ? "Impossible de charger vos résultats."
-                    : "Unable to load your results."
+                t(
+                    "resultsError"
+                )
             );
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [t]);
 
-    const results = useMemo(
-        () =>
+
+    /* =====================================================
+       CATEGORY NAME
+    ====================================================== */
+
+    function getCategoryName(
+        categoryId
+    ) {
+        if (!categoryId) {
+            return t(
+                "anyCategory"
+            );
+        }
+
+
+        const categories =
             Array.isArray(
-                search?.results
+                NICE_THINGS.categories
             )
-                ? search.results
-                : [],
-        [search]
-    );
+                ? NICE_THINGS.categories
+                : [];
 
-    function changeLanguage(
-        value
-    ) {
-        setLanguage(value);
 
-        localStorage.setItem(
-            "nicethings_language",
-            value
-        );
-    }
+        const category =
+            categories.find(
+                item =>
+                    item.id ===
+                    categoryId
+            );
 
-    function openSpot(
-        spot
-    ) {
-        if (!spot?.id) {
-            return;
+
+        if (!category) {
+            return categoryId;
         }
 
-        sessionStorage.setItem(
-            "nicethings_selected_spot",
-            JSON.stringify({
-                spot,
-                searchId:
-                    search?.searchId ||
-                    null,
-            })
-        );
 
-        window.location.href =
-            `/spot/${spot.id}`;
+        return language ===
+            "fr"
+            ? category.fr
+            : category.en;
     }
 
-    function formatPrice(
-        spot
-    ) {
-        const minimum =
-            Number(
-                spot.minimum_price
-            ) || 0;
 
-        const maximum =
-            Number(
-                spot.maximum_price
-            ) || 0;
-
-        if (
-            minimum &&
-            maximum
-        ) {
-            return `${minimum.toLocaleString()}–${maximum.toLocaleString()} FCFA`;
-        }
-
-        const average =
-            Number(
-                spot.average_price
-            ) || 0;
-
-        if (average) {
-            return `${average.toLocaleString()} FCFA`;
-        }
-
-        return french
-            ? "Prix non indiqué"
-            : "Price unavailable";
-    }
+    /* =====================================================
+       OPEN / CLOSED
+    ====================================================== */
 
     function isOpen(
         spot
     ) {
         if (
-            !spot.opening_time ||
-            !spot.closing_time
+            !spot?.opening_time ||
+            !spot?.closing_time
         ) {
             return null;
         }
 
+
         const now =
             new Date();
+
 
         const currentMinutes =
             now.getHours() *
             60 +
             now.getMinutes();
 
+
         const [
             openHour,
-            openMinute = 0,
+            openMinute,
         ] =
             String(
                 spot.opening_time
@@ -181,9 +198,10 @@ export default function ResultsPage() {
                 .split(":")
                 .map(Number);
 
+
         const [
             closeHour,
-            closeMinute = 0,
+            closeMinute,
         ] =
             String(
                 spot.closing_time
@@ -191,13 +209,35 @@ export default function ResultsPage() {
                 .split(":")
                 .map(Number);
 
+
+        if (
+            !Number.isFinite(
+                openHour
+            ) ||
+            !Number.isFinite(
+                closeHour
+            )
+        ) {
+            return null;
+        }
+
+
         const opening =
-            openHour * 60 +
-            openMinute;
+            openHour *
+            60 +
+            (openMinute || 0);
+
 
         const closing =
-            closeHour * 60 +
-            closeMinute;
+            closeHour *
+            60 +
+            (closeMinute || 0);
+
+
+        /*
+         * Overnight opening hours.
+         * Example: 18:00 → 02:00
+         */
 
         if (
             closing <
@@ -211,6 +251,7 @@ export default function ResultsPage() {
             );
         }
 
+
         return (
             currentMinutes >=
             opening &&
@@ -219,99 +260,357 @@ export default function ResultsPage() {
         );
     }
 
+
+    /* =====================================================
+       PRICE
+    ====================================================== */
+
+    function formatPrice(
+        spot
+    ) {
+        const minimum =
+            Number(
+                spot?.minimum_price
+            );
+
+        const maximum =
+            Number(
+                spot?.maximum_price
+            );
+
+        const average =
+            Number(
+                spot?.average_price
+            );
+
+
+        const currency =
+            spot?.currency ||
+            "XAF";
+
+
+        if (
+            Number.isFinite(
+                minimum
+            ) &&
+            Number.isFinite(
+                maximum
+            ) &&
+            minimum > 0 &&
+            maximum > 0 &&
+            minimum !== maximum
+        ) {
+            return `${minimum.toLocaleString(
+                "fr-FR"
+            )} – ${maximum.toLocaleString(
+                "fr-FR"
+            )} ${currency}`;
+        }
+
+
+        if (
+            Number.isFinite(
+                average
+            ) &&
+            average > 0
+        ) {
+            return `${average.toLocaleString(
+                "fr-FR"
+            )} ${currency}`;
+        }
+
+
+        if (
+            Number.isFinite(
+                minimum
+            ) &&
+            minimum > 0
+        ) {
+            return `${minimum.toLocaleString(
+                "fr-FR"
+            )} ${currency}`;
+        }
+
+
+        return t(
+            "priceNotAvailable"
+        );
+    }
+
+
+    /* =====================================================
+       DISTANCE
+    ====================================================== */
+
+    function formatDistance(
+        distanceKm
+    ) {
+        if (
+            distanceKm ===
+            null ||
+            distanceKm ===
+            undefined
+        ) {
+            return null;
+        }
+
+
+        const distance =
+            Number(
+                distanceKm
+            );
+
+
+        if (
+            !Number.isFinite(
+                distance
+            ) ||
+            distance < 0
+        ) {
+            return null;
+        }
+
+
+        if (
+            distance < 1
+        ) {
+            return `${Math.round(
+                distance * 1000
+            )} m`;
+        }
+
+
+        return `${distance.toFixed(
+            1
+        )} km`;
+    }
+
+
+    /* =====================================================
+       OPEN SPOT
+    ====================================================== */
+
+    function openSpot(
+        spot
+    ) {
+        if (
+            !spot?.id
+        ) {
+            return;
+        }
+
+
+        sessionStorage.setItem(
+            "nicethings_selected_spot",
+            JSON.stringify({
+                spot,
+
+                searchId:
+                    search?.searchId ||
+                    null,
+            })
+        );
+
+
+        window.location.href =
+            `/spot/${spot.id}`;
+    }
+
+
+    /* =====================================================
+       SORTED RESULTS
+    ====================================================== */
+
+    const results =
+        useMemo(() => {
+            if (
+                !search ||
+                !Array.isArray(
+                    search.results
+                )
+            ) {
+                return [];
+            }
+
+
+            return [
+                ...search.results,
+            ];
+        }, [search]);
+
+
+    /* =====================================================
+       LOADING
+    ====================================================== */
+
     if (loading) {
         return (
             <AppShell>
-                <main className="nt-results-page">
-                    <div className="nt-results-loading">
-                        <Sparkles
-                            size={27}
-                        />
 
-                        <p>
-                            {french
-                                ? "Nous trouvons les meilleurs spots..."
-                                : "Finding your best spots..."}
-                        </p>
+                <main className="nt-results-page">
+
+                    <div className="nt-results-shell">
+
+                        <div
+                            className="nt-results-loading"
+                        >
+
+                            <span
+                                className="nt-loading-spinner"
+                            />
+
+                            <p>
+                                {t(
+                                    "loading"
+                                )}
+                            </p>
+
+                        </div>
+
                     </div>
+
                 </main>
+
             </AppShell>
         );
     }
 
-    if (error || !search) {
+
+    /* =====================================================
+       ERROR
+    ====================================================== */
+
+    if (
+        error ||
+        !search
+    ) {
         return (
             <AppShell>
+
                 <main className="nt-results-page">
-                    <div className="nt-results-empty">
-                        <Search
-                            size={30}
-                        />
 
-                        <h1>
-                            {french
-                                ? "Vos résultats ne sont plus disponibles."
-                                : "Your results are no longer available."}
-                        </h1>
+                    <div className="nt-results-shell">
 
-                        <p>
-                            {error}
-                        </p>
-
-                        <Link
-                            href="/find"
-                            className="nt-button nt-button-primary"
+                        <button
+                            type="button"
+                            className="nt-button-secondary"
+                            onClick={() =>
+                                window.history.back()
+                            }
                         >
-                            {french
-                                ? "Nouvelle recherche"
-                                : "New search"}
 
-                            <ArrowRight
+                            <ArrowLeft
                                 size={17}
                             />
-                        </Link>
+
+                            {t(
+                                "back"
+                            )}
+
+                        </button>
+
+
+                        <div
+                            className="nt-results-empty"
+                        >
+
+                            <Sparkles
+                                size={28}
+                            />
+
+                            <h1>
+                                {t(
+                                    "noResults"
+                                )}
+                            </h1>
+
+                            <p>
+                                {error ||
+                                    t(
+                                        "resultsError"
+                                    )}
+                            </p>
+
+
+                            <button
+                                type="button"
+                                className="nt-button-primary"
+                                onClick={() =>
+                                    window.location.href =
+                                    "/find"
+                                }
+                            >
+
+                                <Search
+                                    size={17}
+                                />
+
+                                {t(
+                                    "newSearch"
+                                )}
+
+                                <ArrowRight
+                                    size={17}
+                                />
+
+                            </button>
+
+                        </div>
+
                     </div>
+
                 </main>
+
             </AppShell>
         );
     }
+
 
     return (
         <AppShell>
+
             <main className="nt-results-page">
 
                 <div className="nt-results-shell">
 
-                    {/* =========================================
-                        HEADER
-                    ========================================== */}
+                    {/* =================================================
+                        TOP BAR
+                    ================================================== */}
 
-                    <header className="nt-results-header">
+                    <div
+                        className="nt-results-topbar"
+                    >
 
-                        <Link
-                            href="/find"
-                            className="nt-results-back"
+                        <button
+                            type="button"
+                            className="nt-button-secondary"
+                            onClick={() =>
+                                window.history.back()
+                            }
                         >
+
                             <ArrowLeft
                                 size={17}
                             />
 
                             <span>
-                                {french
-                                    ? "Modifier"
-                                    : "Change search"}
+                                {t(
+                                    "back"
+                                )}
                             </span>
-                        </Link>
 
-                        <div className="nt-results-brand">
-                            <Sparkles
-                                size={16}
-                            />
+                        </button>
 
-                            NiceThings
-                        </div>
 
-                        <div className="nt-language-switch">
+                        <div
+                            className="nt-language-switch"
+                            aria-label={
+                                t(
+                                    "language"
+                                )
+                            }
+                        >
+
                             <button
                                 type="button"
                                 className={
@@ -321,7 +620,7 @@ export default function ResultsPage() {
                                         : ""
                                 }
                                 onClick={() =>
-                                    changeLanguage(
+                                    setLanguage(
                                         "en"
                                     )
                                 }
@@ -329,6 +628,7 @@ export default function ResultsPage() {
                                 EN
                             </button>
 
+
                             <button
                                 type="button"
                                 className={
@@ -338,643 +638,816 @@ export default function ResultsPage() {
                                         : ""
                                 }
                                 onClick={() =>
-                                    changeLanguage(
+                                    setLanguage(
                                         "fr"
                                     )
                                 }
                             >
                                 FR
                             </button>
-                        </div>
-                    </header>
-
-
-                    {/* =========================================
-                        SEARCH SUMMARY
-                    ========================================== */}
-
-                    <section className="nt-results-intro">
-
-                        <div className="nt-find-eyebrow">
-                            <Sparkles
-                                size={13}
-                            />
-
-                            {french
-                                ? "Votre sélection"
-                                : "Your selection"}
-                        </div>
-
-                        <h1>
-                            {results.length}{" "}
-                            {french
-                                ? "spots qui pourraient vous plaire."
-                                : "spots that could be your kind of place."}
-                        </h1>
-
-                        <div className="nt-search-summary">
-
-                            {search.locationText && (
-                                <SummaryPill
-                                    icon={
-                                        <MapPin
-                                            size={13}
-                                        />
-                                    }
-                                    text={
-                                        search.locationText
-                                    }
-                                />
-                            )}
-
-                            <SummaryPill
-                                icon={
-                                    <Sparkles
-                                        size={13}
-                                    />
-                                }
-                                text={`${Number(
-                                    search.budget
-                                ).toLocaleString()} FCFA`}
-                            />
-
-                            <SummaryPill
-                                icon={
-                                    <Star
-                                        size={13}
-                                    />
-                                }
-                                text={
-                                    search.people ===
-                                        1
-                                        ? french
-                                            ? "1 personne"
-                                            : "1 person"
-                                        : french
-                                            ? `${search.people} personnes`
-                                            : `${search.people} people`
-                                }
-                            />
-
-                            {search.category && (
-                                <SummaryPill
-                                    icon={
-                                        <Search
-                                            size={13}
-                                        />
-                                    }
-                                    text={
-                                        search.category
-                                    }
-                                />
-                            )}
 
                         </div>
-                    </section>
 
-
-                    {/* =========================================
-                        VIEW CONTROLS
-                    ========================================== */}
-
-                    <div className="nt-results-controls">
-
-                        <div>
-                            <strong>
-                                {french
-                                    ? "Meilleures correspondances"
-                                    : "Best matches"}
-                            </strong>
-
-                            <span>
-                                {french
-                                    ? "Classées pour vous"
-                                    : "Ranked for you"}
-                            </span>
-                        </div>
-
-                        <div className="nt-results-view-switch">
-
-                            <button
-                                type="button"
-                                className={
-                                    view ===
-                                        "list"
-                                        ? "active"
-                                        : ""
-                                }
-                                onClick={() =>
-                                    setView(
-                                        "list"
-                                    )
-                                }
-                            >
-                                <Search
-                                    size={14}
-                                />
-
-                                {french
-                                    ? "Liste"
-                                    : "List"}
-                            </button>
-
-                            <button
-                                type="button"
-                                className={
-                                    view ===
-                                        "map"
-                                        ? "active"
-                                        : ""
-                                }
-                                onClick={() =>
-                                    setView(
-                                        "map"
-                                    )
-                                }
-                            >
-                                <Map
-                                    size={14}
-                                />
-
-                                Map
-                            </button>
-
-                        </div>
                     </div>
 
 
-                    {/* =========================================
-                        MAP
-                    ========================================== */}
+                    {/* =================================================
+                        HEADER
+                    ================================================== */}
 
-                    {view === "map" && (
-                        <ResultsMap
-                            results={
-                                results
-                            }
-                            latitude={
-                                search.latitude
-                            }
-                            longitude={
-                                search.longitude
-                            }
-                            french={
-                                french
-                            }
-                            onSelect={
-                                openSpot
-                            }
-                        />
-                    )}
+                    <header
+                        className="nt-results-header"
+                    >
+
+                        <div
+                            className="nt-results-eyebrow"
+                        >
+
+                            <Sparkles
+                                size={14}
+                            />
+
+                            {t(
+                                "bestMatches"
+                            )}
+
+                        </div>
 
 
-                    {/* =========================================
+                        <h1>
+                            {results.length >
+                                0
+                                ? t(
+                                    "resultsTitle"
+                                )
+                                : t(
+                                    "noResults"
+                                )}
+                        </h1>
+
+
+                        <p>
+                            {results.length >
+                                0
+                                ? t(
+                                    "resultsDescription"
+                                )
+                                : t(
+                                    "resultsEmptyDescription"
+                                )}
+                        </p>
+
+                    </header>
+
+
+                    {/* =================================================
+                        SEARCH SUMMARY
+                    ================================================== */}
+
+                    <section
+                        className="nt-results-summary"
+                    >
+
+                        <div
+                            className="nt-results-summary-item"
+                        >
+
+                            <MapPin
+                                size={16}
+                            />
+
+                            <div>
+
+                                <span>
+                                    {t(
+                                        "location"
+                                    )}
+                                </span>
+
+                                <strong>
+                                    {search.locationText ||
+                                        t(
+                                            "currentLocation"
+                                        )}
+                                </strong>
+
+                            </div>
+
+                        </div>
+
+
+                        <div
+                            className="nt-results-summary-item"
+                        >
+
+                            <span
+                                className="nt-results-summary-symbol"
+                            >
+                                FCFA
+                            </span>
+
+                            <div>
+
+                                <span>
+                                    {t(
+                                        "budget"
+                                    )}
+                                </span>
+
+                                <strong>
+                                    {Number.isFinite(
+                                        Number(
+                                            search.budget
+                                        )
+                                    )
+                                        ? Number(
+                                            search.budget
+                                        ).toLocaleString(
+                                            "fr-FR"
+                                        )
+                                        : "—"}{" "}
+                                    FCFA
+                                </strong>
+
+                            </div>
+
+                        </div>
+
+
+                        <div
+                            className="nt-results-summary-item"
+                        >
+
+                            <span
+                                className="nt-results-summary-symbol"
+                            >
+                                {search.people ||
+                                    1}
+                            </span>
+
+                            <div>
+
+                                <span>
+                                    {t(
+                                        "people"
+                                    )}
+                                </span>
+
+                                <strong>
+                                    {Number(
+                                        search.people
+                                    ) === 1
+                                        ? t(
+                                            "onePerson"
+                                        )
+                                        : `${search.people} ${t(
+                                            "people"
+                                        )}`}
+                                </strong>
+
+                            </div>
+
+                        </div>
+
+
+                        <div
+                            className="nt-results-summary-item"
+                        >
+
+                            <Sparkles
+                                size={16}
+                            />
+
+                            <div>
+
+                                <span>
+                                    {t(
+                                        "category"
+                                    )}
+                                </span>
+
+                                <strong>
+                                    {getCategoryName(
+                                        search.category
+                                    )}
+                                </strong>
+
+                            </div>
+
+                        </div>
+
+                    </section>
+
+
+                    {/* =================================================
+                        RESULTS TOOLBAR
+                    ================================================== */}
+
+                    <div
+                        className="nt-results-toolbar"
+                    >
+
+                        <div>
+
+                            <strong>
+                                {results.length}
+                            </strong>{" "}
+
+                            {results.length ===
+                                1
+                                ? t(
+                                    "place"
+                                )
+                                : t(
+                                    "places"
+                                )}
+
+                        </div>
+
+
+                        <div
+                            className="nt-results-view-switch"
+                        >
+
+                            <button
+                                type="button"
+                                className={
+                                    view ===
+                                        "list"
+                                        ? "active"
+                                        : ""
+                                }
+                                onClick={() =>
+                                    setView(
+                                        "list"
+                                    )
+                                }
+                            >
+
+                                <Navigation
+                                    size={15}
+                                />
+
+                                {t(
+                                    "listView"
+                                )}
+
+                            </button>
+
+
+                            <button
+                                type="button"
+                                className={
+                                    view ===
+                                        "map"
+                                        ? "active"
+                                        : ""
+                                }
+                                onClick={() =>
+                                    setView(
+                                        "map"
+                                    )
+                                }
+                            >
+
+                                <MapPin
+                                    size={15}
+                                />
+
+                                {t(
+                                    "mapView"
+                                )}
+
+                            </button>
+
+                        </div>
+
+                    </div>
+
+
+                    {/* =================================================
                         RESULTS
-                    ========================================== */}
+                    ================================================== */}
 
                     {view ===
-                        "list" && (
-                            <section className="nt-results-list">
+                        "list" ? (
 
-                                {results.length ===
-                                    0 ? (
-                                    <div className="nt-results-empty">
-                                        <MapPin
-                                            size={28}
+                        <section
+                            className="nt-results-list"
+                        >
+
+                            {results.length ===
+                                0 ? (
+
+                                <div
+                                    className="nt-results-empty"
+                                >
+
+                                    <Sparkles
+                                        size={28}
+                                    />
+
+                                    <h2>
+                                        {t(
+                                            "noResults"
+                                        )}
+                                    </h2>
+
+                                    <p>
+                                        {t(
+                                            "resultsEmptyDescription"
+                                        )}
+                                    </p>
+
+
+                                    <button
+                                        type="button"
+                                        className="nt-button-primary"
+                                        onClick={() =>
+                                            window.location.href =
+                                            "/find"
+                                        }
+                                    >
+
+                                        <Search
+                                            size={17}
                                         />
 
-                                        <h2>
-                                            {french
-                                                ? "Aucun spot ne correspond encore."
-                                                : "No matching spots yet."}
-                                        </h2>
+                                        {t(
+                                            "newSearch"
+                                        )}
 
-                                        <p>
-                                            {french
-                                                ? "Essayez un budget différent ou une zone plus large."
-                                                : "Try a different budget or a wider area."}
-                                        </p>
+                                        <ArrowRight
+                                            size={17}
+                                        />
 
-                                        <Link
-                                            href="/find"
-                                            className="nt-button nt-button-primary"
-                                        >
-                                            {french
-                                                ? "Nouvelle recherche"
-                                                : "Try another search"}
-                                        </Link>
-                                    </div>
-                                ) : (
-                                    results.map(
-                                        (
-                                            spot,
-                                            index
-                                        ) => (
-                                            <ResultCard
+                                    </button>
+
+                                </div>
+
+                            ) : (
+
+                                results.map(
+                                    (
+                                        spot,
+                                        index
+                                    ) => {
+
+                                        const open =
+                                            isOpen(
+                                                spot
+                                            );
+
+
+                                        const distance =
+                                            formatDistance(
+                                                spot?.distanceKm
+                                            );
+
+
+                                        const matchScore =
+                                            Number(
+                                                spot?.match
+                                                    ?.score
+                                            );
+
+
+                                        const hasMatchScore =
+                                            Number.isFinite(
+                                                matchScore
+                                            );
+
+
+                                        return (
+                                            <article
                                                 key={
-                                                    spot.id
+                                                    spot?.id ||
+                                                    index
                                                 }
-                                                spot={
-                                                    spot
-                                                }
-                                                rank={
-                                                    index +
-                                                    1
-                                                }
-                                                french={
-                                                    french
-                                                }
-                                                price={formatPrice(
-                                                    spot
-                                                )}
-                                                open={isOpen(
-                                                    spot
-                                                )}
-                                                onOpen={() =>
+                                                className="nt-result-card"
+                                                onClick={() =>
                                                     openSpot(
                                                         spot
                                                     )
                                                 }
-                                            />
-                                        )
-                                    )
-                                )}
+                                                role="button"
+                                                tabIndex={0}
+                                                onKeyDown={
+                                                    event => {
+                                                        if (
+                                                            event.key ===
+                                                            "Enter" ||
+                                                            event.key ===
+                                                            " "
+                                                        ) {
+                                                            event.preventDefault();
 
-                            </section>
-                        )}
+                                                            openSpot(
+                                                                spot
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            >
 
-                </div>
-            </main>
-        </AppShell>
-    );
-}
+                                                {/* CARD TOP */}
 
+                                                <div
+                                                    className="nt-result-card-top"
+                                                >
 
-/* ============================================================
-   RESULT CARD
-============================================================ */
-
-function ResultCard({
-    spot,
-    rank,
-    french,
-    price,
-    open,
-    onOpen,
-}) {
-    const distance =
-        formatDistance(
-            spot.distanceKm
-        );
-
-    const score =
-        Number(
-            spot.match?.score
-        ) || 0;
-
-    return (
-        <article className="nt-result-card">
-
-            <div className="nt-result-visual">
-
-                <div className="nt-result-image-placeholder">
-                    <Sparkles
-                        size={27}
-                    />
-
-                    <span>
-                        NiceThings
-                    </span>
-                </div>
-
-                <div className="nt-result-rank">
-                    #{rank}
-                </div>
-
-                {spot.verified && (
-                    <div className="nt-result-verified">
-                        ✓{" "}
-                        {french
-                            ? "Vérifié"
-                            : "Verified"}
-                    </div>
-                )}
-
-            </div>
+                                                    <div
+                                                        className="nt-result-category-icon"
+                                                    >
+                                                        🍽️
+                                                    </div>
 
 
-            <div className="nt-result-content">
+                                                    <div
+                                                        className="nt-result-card-title"
+                                                    >
 
-                <div className="nt-result-topline">
+                                                        <div
+                                                            style={{
+                                                                display:
+                                                                    "flex",
 
-                    <div>
-                        <h2>
-                            {spot.name}
-                        </h2>
+                                                                alignItems:
+                                                                    "center",
 
-                        <div className="nt-result-category">
-                            {spot.category ||
-                                (french
-                                    ? "Spot"
-                                    : "Place")}
-                        </div>
-                    </div>
+                                                                gap:
+                                                                    "8px",
 
-                    <div className="nt-match-score">
-                        <span>
-                            {score}%
-                        </span>
+                                                                flexWrap:
+                                                                    "wrap",
+                                                            }}
+                                                        >
 
-                        <small>
-                            {french
-                                ? "match"
-                                : "match"}
-                        </small>
-                    </div>
-
-                </div>
+                                                            <h2>
+                                                                {
+                                                                    spot?.name ||
+                                                                    t(
+                                                                        "locationNotAvailable"
+                                                                    )
+                                                                }
+                                                            </h2>
 
 
-                {spot.description && (
-                    <p className="nt-result-description">
-                        {spot.description}
-                    </p>
-                )}
+                                                            {spot?.verified && (
+                                                                <span
+                                                                    className="nt-verified-badge"
+                                                                >
+                                                                    {t(
+                                                                        "verified"
+                                                                    )}
+                                                                </span>
+                                                            )}
+
+                                                        </div>
 
 
-                <div className="nt-result-facts">
+                                                        <p>
+                                                            {getCategoryName(
+                                                                spot?.category
+                                                            )}
+                                                        </p>
 
-                    <Fact
-                        icon={
-                            <Sparkles
-                                size={14}
-                            />
-                        }
-                        text={
-                            price
-                        }
-                    />
-
-                    {distance && (
-                        <Fact
-                            icon={
-                                <MapPin
-                                    size={14}
-                                />
-                            }
-                            text={
-                                distance
-                            }
-                        />
-                    )}
-
-                    {spot.rating > 0 && (
-                        <Fact
-                            icon={
-                                <Star
-                                    size={14}
-                                    fill="currentColor"
-                                />
-                            }
-                            text={`${Number(
-                                spot.rating
-                            ).toFixed(
-                                1
-                            )}`}
-                        />
-                    )}
-
-                    {open !== null && (
-                        <Fact
-                            icon={
-                                <Clock3
-                                    size={14}
-                                />
-                            }
-                            text={
-                                open
-                                    ? french
-                                        ? "Ouvert"
-                                        : "Open"
-                                    : french
-                                        ? "Fermé"
-                                        : "Closed"
-                            }
-                            positive={
-                                open
-                            }
-                        />
-                    )}
-
-                </div>
+                                                    </div>
 
 
-                <div className="nt-result-footer">
+                                                    <ArrowRight
+                                                        size={18}
+                                                        className="nt-result-arrow"
+                                                    />
 
-                    <div className="nt-result-address">
-                        <MapPin
-                            size={14}
-                        />
-
-                        <span>
-                            {spot.address ||
-                                spot.neighborhood ||
-                                spot.city ||
-                                (french
-                                    ? "Adresse disponible sur la fiche"
-                                    : "Address available on profile")}
-                        </span>
-                    </div>
-
-                    <button
-                        type="button"
-                        className="nt-result-button"
-                        onClick={
-                            onOpen
-                        }
-                    >
-                        {french
-                            ? "Voir"
-                            : "View"}
-
-                        <ArrowRight
-                            size={16}
-                        />
-                    </button>
-
-                </div>
-
-            </div>
-
-        </article>
-    );
-}
+                                                </div>
 
 
-/* ============================================================
-   FACT
-============================================================ */
+                                                {/* DETAILS */}
 
-function Fact({
-    icon,
-    text,
-    positive = false,
-}) {
-    return (
-        <span
-            className={
-                positive
-                    ? "nt-result-fact positive"
-                    : "nt-result-fact"
-            }
-        >
-            {icon}
+                                                <div
+                                                    className="nt-result-details"
+                                                >
 
-            {text}
-        </span>
-    );
-}
+                                                    <div
+                                                        className="nt-result-detail"
+                                                    >
 
+                                                        <MapPin
+                                                            size={15}
+                                                        />
 
-/* ============================================================
-   SUMMARY PILL
-============================================================ */
+                                                        <span>
+                                                            {spot?.neighborhood ||
+                                                                spot?.address ||
+                                                                spot?.city ||
+                                                                t(
+                                                                    "locationNotAvailable"
+                                                                )}
+                                                        </span>
 
-function SummaryPill({
-    icon,
-    text,
-}) {
-    return (
-        <span className="nt-summary-pill">
-            {icon}
-            {text}
-        </span>
-    );
-}
+                                                    </div>
 
 
-/* ============================================================
-   MAP
-============================================================ */
+                                                    <div
+                                                        className="nt-result-detail"
+                                                    >
 
-function ResultsMap({
-    results,
-    latitude,
-    longitude,
-    french,
-    onSelect,
-}) {
-    const firstSpot =
-        results.find(
-            (spot) =>
-                Number.isFinite(
-                    Number(
-                        spot.latitude
-                    )
-                ) &&
-                Number.isFinite(
-                    Number(
-                        spot.longitude
-                    )
-                )
-        );
+                                                        <span
+                                                            className="nt-price-icon"
+                                                        >
+                                                            FCFA
+                                                        </span>
 
-    const mapLatitude =
-        firstSpot?.latitude ??
-        latitude ??
-        3.848;
+                                                        <span>
+                                                            {formatPrice(
+                                                                spot
+                                                            )}
+                                                        </span>
 
-    const mapLongitude =
-        firstSpot?.longitude ??
-        longitude ??
-        11.502;
+                                                    </div>
 
-    const mapUrl =
-        `https://www.openstreetmap.org/export/embed.html?bbox=${mapLongitude - 0.035},${mapLatitude - 0.035},${mapLongitude + 0.035},${mapLatitude + 0.035}&layer=mapnik&marker=${mapLatitude},${mapLongitude}`;
 
-    return (
-        <section className="nt-results-map">
+                                                    {distance && (
+                                                        <div
+                                                            className="nt-result-detail"
+                                                        >
 
-            <div className="nt-map-frame">
-                <iframe
-                    title="NiceThings map"
-                    src={mapUrl}
-                    loading="lazy"
-                />
+                                                            <Navigation
+                                                                size={
+                                                                    15
+                                                                }
+                                                            />
 
-                <div className="nt-map-overlay">
-                    <Navigation
-                        size={15}
-                    />
+                                                            <span>
+                                                                {
+                                                                    distance
+                                                                }
+                                                            </span>
 
-                    {french
-                        ? "Votre zone"
-                        : "Your area"}
-                </div>
-            </div>
+                                                        </div>
+                                                    )}
 
-            <div className="nt-map-results">
 
-                {results
-                    .slice(
-                        0,
-                        5
-                    )
-                    .map(
-                        (
-                            spot,
-                            index
-                        ) => (
-                            <button
-                                type="button"
-                                key={
-                                    spot.id
-                                }
-                                onClick={() =>
-                                    onSelect(
-                                        spot
-                                    )
-                                }
+                                                    {Number(
+                                                        spot?.rating
+                                                    ) > 0 && (
+                                                            <div
+                                                                className="nt-result-detail"
+                                                            >
+
+                                                                <Star
+                                                                    size={
+                                                                        15
+                                                                    }
+                                                                    fill="currentColor"
+                                                                />
+
+                                                                <span>
+
+                                                                    {Number(
+                                                                        spot.rating
+                                                                    ).toFixed(
+                                                                        1
+                                                                    )}
+
+                                                                    {Number(
+                                                                        spot?.review_count
+                                                                    ) >
+                                                                        0 && (
+                                                                            <>
+                                                                                {" "}
+                                                                                (
+                                                                                {
+                                                                                    spot.review_count
+                                                                                }
+                                                                                )
+                                                                            </>
+                                                                        )}
+
+                                                                </span>
+
+                                                            </div>
+                                                        )}
+
+                                                </div>
+
+
+                                                {/* BOTTOM STATUS */}
+
+                                                <div
+                                                    className="nt-result-card-bottom"
+                                                >
+
+                                                    <div>
+
+                                                        {open ===
+                                                            true ? (
+
+                                                            <span className="nt-open-status">
+
+                                                                <span className="nt-status-dot" />
+
+                                                                {t(
+                                                                    "open"
+                                                                )}
+
+                                                            </span>
+
+                                                        ) : open ===
+                                                            false ? (
+
+                                                            <span className="nt-closed-status">
+
+                                                                <span className="nt-status-dot" />
+
+                                                                {t(
+                                                                    "closed"
+                                                                )}
+
+                                                            </span>
+
+                                                        ) : (
+
+                                                            <span className="nt-neutral-status">
+
+                                                                <Clock3
+                                                                    size={
+                                                                        14
+                                                                    }
+                                                                />
+
+                                                                {t(
+                                                                    "hoursNotAvailable"
+                                                                )}
+
+                                                            </span>
+
+                                                        )}
+
+                                                    </div>
+
+
+                                                    {hasMatchScore && (
+                                                        <span
+                                                            className="nt-match-score"
+                                                        >
+
+                                                            <Sparkles
+                                                                size={
+                                                                    13
+                                                                }
+                                                            />
+
+                                                            {Math.round(
+                                                                matchScore
+                                                            )}
+                                                            %
+                                                            {t(
+                                                                "match"
+                                                            )}
+
+                                                        </span>
+                                                    )}
+
+                                                </div>
+
+                                            </article>
+                                        );
+                                    }
+                                )
+                            )}
+
+                        </section>
+
+                    ) : (
+
+                        /* =================================================
+                           MAP
+                        ================================================== */
+
+                        <section
+                            className="nt-results-map"
+                        >
+
+                            <div
+                                className="nt-map-placeholder"
                             >
-                                <span>
-                                    {index +
-                                        1}
-                                </span>
 
-                                <div>
-                                    <strong>
-                                        {
-                                            spot.name
-                                        }
-                                    </strong>
-
-                                    <small>
-                                        {formatDistance(
-                                            spot.distanceKm
-                                        ) ||
-                                            spot.neighborhood ||
-                                            ""}
-                                    </small>
-                                </div>
-
-                                <ArrowRight
-                                    size={15}
+                                <MapPin
+                                    size={32}
                                 />
-                            </button>
-                        )
+
+                                <h2>
+                                    {t(
+                                        "mapView"
+                                    )}
+                                </h2>
+
+                                <p>
+                                    {t(
+                                        "mapComingSoon"
+                                    )}
+                                </p>
+
+
+                                <button
+                                    type="button"
+                                    className="nt-button-secondary"
+                                    onClick={() =>
+                                        setView(
+                                            "list"
+                                        )
+                                    }
+                                >
+
+                                    <ArrowLeft
+                                        size={16}
+                                    />
+
+                                    {t(
+                                        "listView"
+                                    )}
+
+                                </button>
+
+                            </div>
+
+                        </section>
                     )}
 
-            </div>
 
-            <p className="nt-map-note">
-                <Map
-                    size={13}
-                />
+                    {/* =================================================
+                        BOTTOM ACTION
+                    ================================================== */}
 
-                {french
-                    ? "La navigation précise sera disponible depuis la fiche du spot."
-                    : "Turn-by-turn navigation will be available from the spot profile."}
-            </p>
-        </section>
+                    <div
+                        style={{
+                            marginTop:
+                                "24px",
+
+                            display:
+                                "flex",
+
+                            justifyContent:
+                                "center",
+                        }}
+                    >
+
+                        <button
+                            type="button"
+                            className="nt-button-secondary"
+                            onClick={() =>
+                                window.location.href =
+                                "/find"
+                            }
+                        >
+
+                            <Search
+                                size={17}
+                            />
+
+                            <span>
+                                {t(
+                                    "newSearch"
+                                )}
+                            </span>
+
+                        </button>
+
+                    </div>
+
+
+                    {/* =================================================
+                        SEARCH ACCESS INFO
+                    ================================================== */}
+
+                    {search.accessExpiresAt && (
+                        <div
+                            style={{
+                                marginTop:
+                                    "16px",
+
+                                textAlign:
+                                    "center",
+
+                                color:
+                                    "var(--nt-muted)",
+
+                                fontSize:
+                                    "0.75rem",
+                            }}
+                        >
+                            {t(
+                                "accessActive"
+                            )}
+                        </div>
+                    )}
+
+                </div>
+
+            </main>
+
+        </AppShell>
     );
 }

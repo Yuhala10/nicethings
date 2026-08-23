@@ -1,5 +1,6 @@
 import formidable from "formidable";
 import fs from "fs";
+
 import supabaseAdmin from "../../../lib/supabaseAdmin";
 
 export const config = {
@@ -8,23 +9,41 @@ export const config = {
     },
 };
 
+
 export default async function handler(
     req,
     res
 ) {
-    if (req.method !== "POST") {
+    if (
+        req.method !==
+        "POST"
+    ) {
         return res.status(405).json({
-            error: "Method not allowed.",
+            error:
+                "Method not allowed.",
         });
     }
+
+
+    let uploadedFilePath =
+        null;
+
+    let createdAccessPassId =
+        null;
+
 
     try {
         const form =
             formidable({
-                multiples: false,
+                multiples:
+                    false,
+
                 maxFileSize:
-                    5 * 1024 * 1024,
+                    5 *
+                    1024 *
+                    1024,
             });
+
 
         const [
             fields,
@@ -34,6 +53,7 @@ export default async function handler(
                 req
             );
 
+
         const visitorId =
             Array.isArray(
                 fields.visitorId
@@ -41,12 +61,15 @@ export default async function handler(
                 ? fields.visitorId[0]
                 : fields.visitorId;
 
+
         const transactionReference =
             Array.isArray(
                 fields.transactionReference
             )
-                ? fields.transactionReference[0]
+                ? fields
+                    .transactionReference[0]
                 : fields.transactionReference;
+
 
         const proof =
             Array.isArray(
@@ -55,6 +78,7 @@ export default async function handler(
                 ? files.proof[0]
                 : files.proof;
 
+
         if (!visitorId) {
             return res.status(400).json({
                 error:
@@ -62,12 +86,74 @@ export default async function handler(
             });
         }
 
+
         if (!proof) {
             return res.status(400).json({
                 error:
                     "Payment proof is required.",
             });
         }
+
+
+        /*
+         * Prevent multiple pending
+         * payment requests for the
+         * same visitor.
+         */
+
+        const {
+            data: existingPayment,
+            error: existingPaymentError,
+        } =
+            await supabaseAdmin
+                .from(
+                    "nt_payment_requests"
+                )
+                .select(
+                    "id,status"
+                )
+                .eq(
+                    "visitor_id",
+                    visitorId
+                )
+                .eq(
+                    "status",
+                    "PENDING"
+                )
+                .limit(1)
+                .maybeSingle();
+
+
+        if (
+            existingPaymentError
+        ) {
+            console.error(
+                "Existing payment check:",
+                existingPaymentError
+            );
+
+            return res.status(500).json({
+                error:
+                    "Unable to check your existing payment request.",
+            });
+        }
+
+
+        if (
+            existingPayment
+        ) {
+            return res.status(409).json({
+                error:
+                    "You already have a payment waiting for verification.",
+                pending:
+                    true,
+            });
+        }
+
+
+        /*
+         * Validate image type.
+         */
 
         const extension =
             (
@@ -78,13 +164,14 @@ export default async function handler(
                 .pop()
                 .toLowerCase();
 
-        const allowed =
-            [
-                "jpg",
-                "jpeg",
-                "png",
-                "webp",
-            ];
+
+        const allowed = [
+            "jpg",
+            "jpeg",
+            "png",
+            "webp",
+        ];
+
 
         if (
             !allowed.includes(
@@ -97,7 +184,19 @@ export default async function handler(
             });
         }
 
-        const accessPass =
+
+        /*
+         * Create access pass.
+         *
+         * It stays PENDING until
+         * an administrator approves
+         * the payment.
+         */
+
+        const {
+            data: accessPass,
+            error: accessPassError,
+        } =
             await supabaseAdmin
                 .from(
                     "nt_access_passes"
@@ -105,9 +204,13 @@ export default async function handler(
                 .insert({
                     visitor_id:
                         visitorId,
-                    amount: 100,
+
+                    amount:
+                        100,
+
                     currency:
                         "XAF",
+
                     status:
                         "PENDING",
                 })
@@ -116,11 +219,14 @@ export default async function handler(
                 )
                 .single();
 
+
         if (
-            accessPass.error
+            accessPassError ||
+            !accessPass
         ) {
             console.error(
-                accessPass.error
+                "Access pass:",
+                accessPassError
             );
 
             return res.status(500).json({
@@ -129,13 +235,36 @@ export default async function handler(
             });
         }
 
+
+        createdAccessPassId =
+            accessPass.id;
+
+
+        /*
+         * Build storage path.
+         */
+
         const filePath =
-            `${visitorId}/${accessPass.data.id}-${Date.now()}.${extension}`;
+            `${visitorId}/${accessPass.id}-${Date.now()}.${extension}`;
+
+
+        uploadedFilePath =
+            filePath;
+
+
+        /*
+         * Read uploaded proof.
+         */
 
         const fileBuffer =
             fs.readFileSync(
                 proof.filepath
             );
+
+
+        /*
+         * Upload proof.
+         */
 
         const {
             error: uploadError,
@@ -152,14 +281,36 @@ export default async function handler(
                         contentType:
                             proof.mimetype ||
                             "image/jpeg",
-                        upsert: false,
+
+                        upsert:
+                            false,
                     }
                 );
 
-        if (uploadError) {
+
+        if (
+            uploadError
+        ) {
             console.error(
+                "Payment proof upload:",
                 uploadError
             );
+
+            /*
+             * Clean up the access
+             * pass that was created.
+             */
+
+            await supabaseAdmin
+                .from(
+                    "nt_access_passes"
+                )
+                .delete()
+                .eq(
+                    "id",
+                    accessPass.id
+                );
+
 
             return res.status(500).json({
                 error:
@@ -167,7 +318,13 @@ export default async function handler(
             });
         }
 
+
+        /*
+         * Create payment request.
+         */
+
         const {
+            data: payment,
             error: paymentError,
         } =
             await supabaseAdmin
@@ -179,17 +336,17 @@ export default async function handler(
                         visitorId,
 
                     access_pass_id:
-                        accessPass
-                            .data
-                            .id,
+                        accessPass.id,
 
-                    amount: 100,
+                    amount:
+                        100,
 
                     currency:
                         "XAF",
 
                     transaction_reference:
-                        transactionReference?.trim() ||
+                        transactionReference
+                            ?.trim() ||
                         null,
 
                     proof_url:
@@ -197,12 +354,26 @@ export default async function handler(
 
                     status:
                         "PENDING",
-                });
+                })
+                .select(
+                    "id"
+                )
+                .single();
 
-        if (paymentError) {
+
+        if (
+            paymentError ||
+            !payment
+        ) {
             console.error(
+                "Payment request:",
                 paymentError
             );
+
+
+            /*
+             * Remove uploaded proof.
+             */
 
             await supabaseAdmin
                 .storage
@@ -213,20 +384,106 @@ export default async function handler(
                     filePath,
                 ]);
 
+
+            /*
+             * Remove orphaned
+             * access pass.
+             */
+
+            await supabaseAdmin
+                .from(
+                    "nt_access_passes"
+                )
+                .delete()
+                .eq(
+                    "id",
+                    accessPass.id
+                );
+
+
             return res.status(500).json({
                 error:
                     "Unable to create payment request.",
             });
         }
 
+
+        /*
+         * Everything succeeded.
+         */
+
         return res.status(201).json({
-            success: true,
+            success:
+                true,
+
+            paymentId:
+                payment.id,
+
+            accessPassId:
+                accessPass.id,
         });
-    } catch (error) {
+
+
+    } catch (
+    error
+    ) {
         console.error(
             "Payment submission:",
             error
         );
+
+
+        /*
+         * Best-effort cleanup if
+         * something unexpected fails.
+         */
+
+        if (
+            uploadedFilePath
+        ) {
+            try {
+                await supabaseAdmin
+                    .storage
+                    .from(
+                        "nt-payment-proofs"
+                    )
+                    .remove([
+                        uploadedFilePath,
+                    ]);
+            } catch (
+            cleanupError
+            ) {
+                console.error(
+                    "Proof cleanup:",
+                    cleanupError
+                );
+            }
+        }
+
+
+        if (
+            createdAccessPassId
+        ) {
+            try {
+                await supabaseAdmin
+                    .from(
+                        "nt_access_passes"
+                    )
+                    .delete()
+                    .eq(
+                        "id",
+                        createdAccessPassId
+                    );
+            } catch (
+            cleanupError
+            ) {
+                console.error(
+                    "Access cleanup:",
+                    cleanupError
+                );
+            }
+        }
+
 
         return res.status(500).json({
             error:

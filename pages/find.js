@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+
 import {
+    ArrowLeft,
     ArrowRight,
     LocateFixed,
     MapPin,
@@ -10,48 +12,130 @@ import {
 } from "lucide-react";
 
 import AppShell from "../components/layout/AppShell";
+import { useLanguage } from "../lib/i18n";
 import { getCurrentLocation } from "../lib/location";
 import { NICE_THINGS } from "../lib/constants";
 
+
 export default function FindPage() {
-    const [language, setLanguage] =
-        useState("en");
+    const {
+        language,
+        setLanguage,
+        t,
+    } = useLanguage();
 
-    const [visitorId, setVisitorId] =
-        useState("");
 
-    const [locationMode, setLocationMode] =
-        useState("area");
+    /* =====================================================
+       VISITOR
+    ====================================================== */
 
-    const [locationText, setLocationText] =
-        useState("");
+    const [
+        visitorId,
+        setVisitorId,
+    ] = useState("");
 
-    const [coordinates, setCoordinates] =
-        useState(null);
 
-    const [budget, setBudget] =
-        useState(2000);
+    /* =====================================================
+       LOCATION
+    ====================================================== */
 
-    const [customBudget, setCustomBudget] =
-        useState("");
+    const [
+        locationMode,
+        setLocationMode,
+    ] = useState("area");
 
-    const [people, setPeople] =
-        useState(1);
+    const [
+        locationText,
+        setLocationText,
+    ] = useState("");
 
-    const [category, setCategory] =
-        useState("");
+    const [
+        coordinates,
+        setCoordinates,
+    ] = useState(null);
 
-    const [loadingLocation, setLoadingLocation] =
-        useState(false);
+    const [
+        loadingLocation,
+        setLoadingLocation,
+    ] = useState(false);
 
-    const [searching, setSearching] =
-        useState(false);
 
-    const [error, setError] =
-        useState("");
+    /* =====================================================
+       SEARCH OPTIONS
+    ====================================================== */
 
-    const french =
-        language === "fr";
+    const budgets =
+        Array.isArray(
+            NICE_THINGS.budgets
+        ) &&
+            NICE_THINGS.budgets.length
+            ? NICE_THINGS.budgets
+            : [1000];
+
+    const peopleOptions =
+        Array.isArray(
+            NICE_THINGS.people
+        ) &&
+            NICE_THINGS.people.length
+            ? NICE_THINGS.people
+            : [1];
+
+    const categories =
+        Array.isArray(
+            NICE_THINGS.categories
+        )
+            ? NICE_THINGS.categories
+            : [];
+
+
+    const [
+        budget,
+        setBudget,
+    ] = useState(
+        budgets[0]
+    );
+
+    const [
+        customBudget,
+        setCustomBudget,
+    ] = useState("");
+
+    const [
+        people,
+        setPeople,
+    ] = useState(
+        peopleOptions[0]
+    );
+
+    const [
+        category,
+        setCategory,
+    ] = useState("");
+
+
+    /* =====================================================
+       SEARCH STATE
+    ====================================================== */
+
+    const [
+        searching,
+        setSearching,
+    ] = useState(false);
+
+    const [
+        error,
+        setError,
+    ] = useState("");
+
+    const [
+        locationError,
+        setLocationError,
+    ] = useState(false);
+
+
+    /* =====================================================
+       CREATE VISITOR ID
+    ====================================================== */
 
     useEffect(() => {
         let id =
@@ -59,9 +143,17 @@ export default function FindPage() {
                 "nicethings_visitor_id"
             );
 
+
         if (!id) {
             id =
-                crypto.randomUUID();
+                typeof crypto !==
+                    "undefined" &&
+                    crypto.randomUUID
+                    ? crypto.randomUUID()
+                    : `visitor_${Date.now()}_${Math.random()
+                        .toString(36)
+                        .slice(2)}`;
+
 
             localStorage.setItem(
                 "nicethings_visitor_id",
@@ -69,90 +161,187 @@ export default function FindPage() {
             );
         }
 
+
         setVisitorId(id);
-
-        const savedLanguage =
-            localStorage.getItem(
-                "nicethings_language"
-            );
-
-        if (
-            savedLanguage === "fr" ||
-            savedLanguage === "en"
-        ) {
-            setLanguage(
-                savedLanguage
-            );
-        }
     }, []);
 
-    function changeLanguage(value) {
-        setLanguage(value);
 
-        localStorage.setItem(
-            "nicethings_language",
-            value
-        );
-    }
+    /* =====================================================
+       USE MY LOCATION
+    ====================================================== */
 
     async function useMyLocation() {
         setError("");
+        setLocationError(false);
         setLoadingLocation(true);
+
 
         try {
             const location =
                 await getCurrentLocation();
 
-            setCoordinates(
-                location
-            );
+
+            setCoordinates({
+                latitude:
+                    location.latitude,
+
+                longitude:
+                    location.longitude,
+
+                accuracy:
+                    location.accuracy,
+            });
+
 
             setLocationMode(
                 "gps"
             );
 
+
+            /*
+             * Keep a human-readable label
+             * for the UI only.
+             *
+             * The real coordinates are sent
+             * separately to the API.
+             */
+
             setLocationText(
-                french
-                    ? "Ma position actuelle"
-                    : "My current location"
+                t("currentLocation")
             );
-        } catch (error) {
+        } catch (
+        locationErrorValue
+        ) {
             console.error(
-                error
+                "NiceThings location error:",
+                locationErrorValue
             );
 
-            setError(
-                french
-                    ? "Nous n'avons pas pu accéder à votre position. Vous pouvez rechercher un quartier à la place."
-                    : "We couldn't access your location. You can search for an area instead."
-            );
+
+            setCoordinates(null);
 
             setLocationMode(
                 "area"
             );
-        } finally {
-            setLoadingLocation(
-                false
+
+            setLocationText("");
+
+            setLocationError(true);
+
+            setError(
+                t("locationError")
             );
+        } finally {
+            setLoadingLocation(false);
         }
     }
+
+
+    /* =====================================================
+       MANUAL LOCATION
+    ====================================================== */
+
+    function chooseManualLocation() {
+        setCoordinates(null);
+
+        setLocationMode(
+            "area"
+        );
+
+        setLocationText("");
+
+        setLocationError(false);
+
+        setError("");
+    }
+
+
+    /* =====================================================
+       BUDGET
+    ====================================================== */
 
     function getFinalBudget() {
         if (
-            customBudget &&
-            Number(
-                customBudget
-            ) > 0
+            customBudget.trim() !==
+            ""
         ) {
-            return Number(
-                customBudget
-            );
+            const value =
+                Number(
+                    customBudget
+                );
+
+
+            if (
+                Number.isFinite(
+                    value
+                ) &&
+                value > 0
+            ) {
+                return value;
+            }
         }
 
-        return Number(
-            budget
+
+        const value =
+            Number(
+                budget
+            );
+
+
+        return Number.isFinite(
+            value
+        ) &&
+            value > 0
+            ? value
+            : 0;
+    }
+
+
+    /* =====================================================
+       PEOPLE
+    ====================================================== */
+
+    function increasePeople() {
+        const maximum =
+            Math.max(
+                ...peopleOptions
+            );
+
+
+        setPeople(
+            current =>
+                Math.min(
+                    Number(
+                        current
+                    ) + 1,
+                    maximum
+                )
         );
     }
+
+
+    function decreasePeople() {
+        const minimum =
+            Math.min(
+                ...peopleOptions
+            );
+
+
+        setPeople(
+            current =>
+                Math.max(
+                    Number(
+                        current
+                    ) - 1,
+                    minimum
+                )
+        );
+    }
+
+
+    /* =====================================================
+       SEARCH
+    ====================================================== */
 
     async function handleSearch(
         event
@@ -160,89 +349,139 @@ export default function FindPage() {
         event.preventDefault();
 
         setError("");
+        setLocationError(false);
+
+
+        /* -------------------------------------------------
+           VISITOR CHECK
+        ------------------------------------------------- */
 
         if (!visitorId) {
             setError(
-                french
-                    ? "Votre session n'est pas encore prête."
-                    : "Your session is not ready yet."
+                t(
+                    "sessionNotReady"
+                )
             );
 
             return;
         }
 
+
+        /* -------------------------------------------------
+           LOCATION CHECK
+        ------------------------------------------------- */
+
         if (
-            locationMode === "area" &&
+            locationMode ===
+            "area" &&
             !locationText.trim()
         ) {
             setError(
-                french
-                    ? "Indiquez un quartier ou utilisez votre position."
-                    : "Tell us an area or use your current location."
+                t(
+                    "locationRequired"
+                )
             );
 
             return;
         }
 
+
+        /* -------------------------------------------------
+           BUDGET CHECK
+        ------------------------------------------------- */
+
         const finalBudget =
             getFinalBudget();
+
 
         if (
             !finalBudget ||
             finalBudget <= 0
         ) {
             setError(
-                french
-                    ? "Choisissez un budget."
-                    : "Choose a budget."
+                t(
+                    "budgetRequired"
+                )
             );
 
             return;
         }
 
+
         setSearching(true);
+
 
         try {
             const response =
                 await fetch(
                     "/api/search",
                     {
-                        method: "POST",
+                        method:
+                            "POST",
+
                         headers: {
                             "Content-Type":
                                 "application/json",
                         },
-                        body: JSON.stringify({
-                            visitorId,
 
-                            latitude:
-                                coordinates?.latitude ??
-                                null,
+                        body:
+                            JSON.stringify({
+                                visitorId,
 
-                            longitude:
-                                coordinates?.longitude ??
-                                null,
+                                latitude:
+                                    coordinates?.latitude ??
+                                    null,
 
-                            locationText:
-                                locationText.trim() ||
-                                null,
+                                longitude:
+                                    coordinates?.longitude ??
+                                    null,
 
-                            budget:
-                                finalBudget,
+                                /*
+                                 * Only send manual
+                                 * location text when
+                                 * the user actually
+                                 * entered an area.
+                                 */
 
-                            people,
+                                locationText:
+                                    locationMode ===
+                                        "area"
+                                        ? locationText
+                                            .trim()
+                                        : null,
 
-                            category:
-                                category ||
-                                null,
+                                budget:
+                                    finalBudget,
 
-                            language,
-                        }),
+                                people:
+                                    Number(
+                                        people
+                                    ),
+
+                                category:
+                                    category ||
+                                    null,
+
+                                language,
+                            }),
                     }
                 );
 
-            const data =
-                await response.json();
+
+            let data = {};
+
+
+            try {
+                data =
+                    await response.json();
+            } catch {
+                data = {};
+            }
+
+
+            /* -------------------------------------------------
+               ACCESS REQUIRED
+            ------------------------------------------------- */
 
             if (
                 response.status ===
@@ -255,27 +494,60 @@ export default function FindPage() {
                 return;
             }
 
-            if (!response.ok) {
+
+            /* -------------------------------------------------
+               SEARCH ERROR
+            ------------------------------------------------- */
+
+            if (
+                !response.ok
+            ) {
                 throw new Error(
                     data.error ||
-                    "Search failed."
+                    t(
+                        "searchError"
+                    )
                 );
             }
+
+
+            /* -------------------------------------------------
+               SAVE SEARCH
+            ------------------------------------------------- */
 
             sessionStorage.setItem(
                 "nicethings_search",
                 JSON.stringify({
                     searchId:
-                        data.searchId,
+                        data.searchId ||
+                        null,
 
                     results:
-                        data.results,
+                        data.results ||
+                        [],
 
                     accessExpiresAt:
-                        data.accessExpiresAt,
+                        data.accessExpiresAt ||
+                        null,
+
+                    launchFree:
+                        Boolean(
+                            data.launchFree
+                        ),
+
+                    admin:
+                        Boolean(
+                            data.admin
+                        ),
 
                     locationText:
-                        locationText.trim(),
+                        locationMode ===
+                            "area"
+                            ? locationText
+                                .trim()
+                            : t(
+                                "currentLocation"
+                            ),
 
                     latitude:
                         coordinates?.latitude ??
@@ -288,7 +560,10 @@ export default function FindPage() {
                     budget:
                         finalBudget,
 
-                    people,
+                    people:
+                        Number(
+                            people
+                        ),
 
                     category:
                         category ||
@@ -298,49 +573,152 @@ export default function FindPage() {
                 })
             );
 
+
+            /* -------------------------------------------------
+               GO TO RESULTS
+            ------------------------------------------------- */
+
             window.location.href =
                 "/results";
-        } catch (error) {
+        } catch (
+        searchError
+        ) {
             console.error(
-                error
+                "NiceThings search error:",
+                searchError
             );
 
+
             setError(
-                french
-                    ? "Une erreur est survenue. Réessayez."
-                    : "Something went wrong. Please try again."
+                searchError?.message ||
+                t(
+                    "searchError"
+                )
             );
         } finally {
-            setSearching(
-                false
-            );
+            setSearching(false);
         }
     }
+
+
+    /* =====================================================
+       SELECTED CATEGORY
+    ====================================================== */
+
+    function getSelectedCategory() {
+        if (!category) {
+            return null;
+        }
+
+
+        return (
+            categories.find(
+                item =>
+                    item.id ===
+                    category
+            ) || null
+        );
+    }
+
+
+    /* =====================================================
+       CATEGORY NAME
+    ====================================================== */
+
+    function getCategoryName(
+        item
+    ) {
+        if (!item) {
+            return "";
+        }
+
+
+        return language ===
+            "fr"
+            ? item.fr
+            : item.en;
+    }
+
+
+    const selectedCategory =
+        getSelectedCategory();
+
+
+    const finalBudget =
+        getFinalBudget();
+
 
     return (
         <AppShell>
 
-            <main className="nt-find-page">
+            <main className="nt-discovery">
 
-                <section className="nt-find-shell">
+                <div className="nt-discovery-shell">
 
-                    {/* =========================================
+                    {/* =================================================
                         TOP BAR
-                    ========================================== */}
+                    ================================================== */}
 
-                    <header className="nt-find-header">
+                    <div
+                        style={{
+                            display:
+                                "flex",
 
-                        <div className="nt-find-brand">
-                            <Sparkles
+                            alignItems:
+                                "center",
+
+                            justifyContent:
+                                "space-between",
+
+                            gap: "12px",
+
+                            marginBottom:
+                                "20px",
+                        }}
+                    >
+
+                        <button
+                            type="button"
+                            onClick={() =>
+                                window.history.back()
+                            }
+                            className="nt-button-secondary"
+                            style={{
+                                minHeight:
+                                    "42px",
+
+                                padding:
+                                    "8px 13px",
+                            }}
+                        >
+
+                            <ArrowLeft
                                 size={17}
                             />
 
                             <span>
-                                NiceThings
+                                {t(
+                                    "back"
+                                )}
                             </span>
-                        </div>
 
-                        <div className="nt-language-switch">
+                        </button>
+
+
+                        {/* Keep this local switch
+                            because find.js previously
+                            provided it. AppShell also
+                            supports language switching. */}
+
+                        <div
+                            className="nt-language-switch"
+                            aria-label={
+                                t(
+                                    "language"
+                                )
+                            }
+                        >
+
                             <button
                                 type="button"
                                 className={
@@ -350,7 +728,7 @@ export default function FindPage() {
                                         : ""
                                 }
                                 onClick={() =>
-                                    changeLanguage(
+                                    setLanguage(
                                         "en"
                                     )
                                 }
@@ -358,6 +736,7 @@ export default function FindPage() {
                                 EN
                             </button>
 
+
                             <button
                                 type="button"
                                 className={
@@ -367,229 +746,414 @@ export default function FindPage() {
                                         : ""
                                 }
                                 onClick={() =>
-                                    changeLanguage(
+                                    setLanguage(
                                         "fr"
                                     )
                                 }
                             >
                                 FR
                             </button>
+
                         </div>
-                    </header>
+
+                    </div>
 
 
-                    {/* =========================================
-                        HERO
-                    ========================================== */}
+                    {/* =================================================
+                        HEADER
+                    ================================================== */}
 
-                    <section className="nt-find-hero">
+                    <header
+                        className="nt-discovery-header"
+                    >
 
-                        <div className="nt-find-hero-orb orb-one" />
-                        <div className="nt-find-hero-orb orb-two" />
+                        <div
+                            className="nt-hero-badge"
+                        >
 
-                        <div className="nt-find-eyebrow">
                             <Sparkles
                                 size={14}
                             />
 
-                            {french
-                                ? "Votre découverte commence ici"
-                                : "Your discovery starts here"}
+                            {t(
+                                "discover"
+                            )}
+
                         </div>
 
+
                         <h1>
-                            {french ? (
-                                <>
-                                    Trouvez quelque
-                                    chose de{" "}
-                                    <span>
-                                        vraiment bien.
-                                    </span>
-                                </>
-                            ) : (
-                                <>
-                                    Find something{" "}
-                                    <span>
-                                        genuinely nice.
-                                    </span>
-                                </>
+                            {t(
+                                "findPageTitle"
                             )}
                         </h1>
 
+
                         <p>
-                            {french
-                                ? "Dites-nous où vous êtes, votre budget et ce qui vous ferait plaisir."
-                                : "Tell us where you are, what you want to spend, and what sounds good."}
+                            {t(
+                                "findPageDescription"
+                            )}
                         </p>
 
-                    </section>
+                    </header>
 
 
-                    {/* =========================================
-                        SEARCH FORM
-                    ========================================== */}
+                    {/* =================================================
+                        PROGRESS
+                    ================================================== */}
+
+                    <div
+                        className="nt-search-progress"
+                        aria-hidden="true"
+                    >
+
+                        <div
+                            className={
+                                locationText
+                                    ? "nt-search-progress-step completed"
+                                    : "nt-search-progress-step active"
+                            }
+                        />
+
+
+                        <div
+                            className={
+                                finalBudget
+                                    ? "nt-search-progress-step active"
+                                    : "nt-search-progress-step"
+                            }
+                        />
+
+
+                        <div
+                            className={
+                                people
+                                    ? "nt-search-progress-step active"
+                                    : "nt-search-progress-step"
+                            }
+                        />
+
+
+                        <div
+                            className={
+                                category
+                                    ? "nt-search-progress-step completed"
+                                    : "nt-search-progress-step"
+                            }
+                        />
+
+                    </div>
+
+
+                    {/* =================================================
+                        FORM
+                    ================================================== */}
 
                     <form
-                        className="nt-discovery-form"
                         onSubmit={
                             handleSearch
                         }
+                        className="nt-discovery-card"
                     >
 
-                        {/* LOCATION */}
+                        {/* =================================================
+                            STEP 1 — LOCATION
+                        ================================================== */}
 
-                        <DiscoverySection
-                            number="01"
-                            title={
-                                french
-                                    ? "Où êtes-vous ?"
-                                    : "Where are you?"
-                            }
-                            subtitle={
-                                french
-                                    ? "Nous trouverons les meilleurs spots autour de vous."
-                                    : "We'll find the best spots around you."
-                            }
+                        <section
+                            className="nt-discovery-step"
                         >
 
-                            <div className="nt-location-toggle">
+                            <div
+                                className="nt-discovery-step-header"
+                            >
 
-                                <button
-                                    type="button"
-                                    className={
-                                        locationMode ===
-                                            "gps"
-                                            ? "active"
-                                            : ""
-                                    }
-                                    onClick={
-                                        useMyLocation
-                                    }
+                                <div
+                                    className="nt-discovery-step-number"
                                 >
-                                    <LocateFixed
-                                        size={17}
-                                    />
+                                    1
+                                </div>
 
-                                    {loadingLocation
-                                        ? french
-                                            ? "Localisation..."
-                                            : "Locating..."
-                                        : french
-                                            ? "Ma position"
-                                            : "My location"}
-                                </button>
 
-                                <button
-                                    type="button"
-                                    className={
-                                        locationMode ===
-                                            "area"
-                                            ? "active"
-                                            : ""
-                                    }
-                                    onClick={() =>
-                                        setLocationMode(
-                                            "area"
-                                        )
-                                    }
-                                >
-                                    <Search
-                                        size={17}
-                                    />
+                                <div>
 
-                                    {french
-                                        ? "Rechercher un quartier"
-                                        : "Search an area"}
-                                </button>
+                                    <h2>
+                                        {t(
+                                            "whereAreYou"
+                                        )}
+                                    </h2>
+
+                                    <p>
+                                        {t(
+                                            "locationHelp"
+                                        )}
+                                    </p>
+
+                                </div>
 
                             </div>
 
-                            {locationMode ===
-                                "area" && (
-                                    <div className="nt-search-input-wrap">
+
+                            <div
+                                className="nt-location-panel"
+                            >
+
+                                <div
+                                    className="nt-location-panel-header"
+                                >
+
+                                    <div
+                                        className="nt-location-panel-icon"
+                                    >
                                         <MapPin
-                                            size={18}
+                                            size={20}
                                         />
+                                    </div>
 
-                                        <input
-                                            value={
-                                                locationText
-                                            }
-                                            onChange={(
-                                                event
-                                            ) =>
-                                                setLocationText(
-                                                    event
-                                                        .target
-                                                        .value
-                                                )
-                                            }
-                                            placeholder={
-                                                french
-                                                    ? "Ex. Bastos, Mvan, Essos..."
-                                                    : "e.g. Bastos, Mvan, Essos..."
-                                            }
-                                        />
+
+                                    <div>
+
+                                        <strong>
+                                            {t(
+                                                "location"
+                                            )}
+                                        </strong>
+
+                                        <span>
+                                            {t(
+                                                "locationOptional"
+                                            )}
+                                        </span>
+
+                                    </div>
+
+                                </div>
+
+
+                                {/* GPS */}
+
+                                <button
+                                    type="button"
+                                    onClick={
+                                        useMyLocation
+                                    }
+                                    disabled={
+                                        loadingLocation
+                                    }
+                                    className={
+                                        locationMode ===
+                                            "gps"
+                                            ? "nt-location-option active"
+                                            : "nt-location-option"
+                                    }
+                                >
+
+                                    {loadingLocation ? (
+                                        <>
+                                            <span
+                                                className="nt-loading-spinner"
+                                                style={{
+                                                    width:
+                                                        "18px",
+
+                                                    height:
+                                                        "18px",
+
+                                                    borderWidth:
+                                                        "2px",
+                                                }}
+                                            />
+
+                                            <span>
+                                                {t(
+                                                    "gettingLocation"
+                                                )}
+                                            </span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <LocateFixed
+                                                size={
+                                                    19
+                                                }
+                                            />
+
+                                            <span>
+                                                {t(
+                                                    "useMyLocation"
+                                                )}
+                                            </span>
+                                        </>
+                                    )}
+
+                                </button>
+
+
+                                {/* Manual */}
+
+                                <button
+                                    type="button"
+                                    onClick={
+                                        chooseManualLocation
+                                    }
+                                    className={
+                                        locationMode ===
+                                            "area"
+                                            ? "nt-location-option active"
+                                            : "nt-location-option"
+                                    }
+                                >
+
+                                    <Navigation
+                                        size={18}
+                                    />
+
+                                    <span>
+                                        {t(
+                                            "manualArea"
+                                        )}
+                                    </span>
+
+                                </button>
+
+
+                                {/* Manual input */}
+
+                                {locationMode ===
+                                    "area" && (
+                                        <div
+                                            className="nt-location-search"
+                                        >
+
+                                            <MapPin
+                                                size={18}
+                                            />
+
+                                            <input
+                                                type="text"
+                                                value={
+                                                    locationText
+                                                }
+                                                onChange={event => {
+                                                    setLocationText(
+                                                        event
+                                                            .target
+                                                            .value
+                                                    );
+
+                                                    setError(
+                                                        ""
+                                                    );
+
+                                                    setLocationError(
+                                                        false
+                                                    );
+                                                }}
+                                                placeholder={t(
+                                                    "locationPlaceholder"
+                                                )}
+                                                autoComplete="off"
+                                                aria-label={t(
+                                                    "location"
+                                                )}
+                                            />
+
+                                        </div>
+                                    )}
+
+
+                                {/* GPS success */}
+
+                                {locationMode ===
+                                    "gps" &&
+                                    coordinates && (
+                                        <div
+                                            className="nt-current-location-success"
+                                        >
+
+                                            <LocateFixed
+                                                size={17}
+                                            />
+
+                                            <span>
+                                                {t(
+                                                    "locationDetected"
+                                                )}
+                                            </span>
+
+                                        </div>
+                                    )}
+
+
+                                {/* Location error */}
+
+                                {locationError && (
+                                    <div
+                                        className="nt-access-error"
+                                        role="alert"
+                                        style={{
+                                            marginTop:
+                                                "10px",
+                                        }}
+                                    >
+                                        {error}
                                     </div>
                                 )}
 
-                            {locationMode ===
-                                "gps" &&
-                                coordinates && (
-                                    <div className="nt-location-confirmed">
-                                        <Navigation
-                                            size={16}
-                                        />
+                            </div>
 
-                                        <span>
-                                            {french
-                                                ? "Position actuelle utilisée"
-                                                : "Current location will be used"}
-                                        </span>
-
-                                        <span>
-                                            ✓
-                                        </span>
-                                    </div>
-                                )}
-
-                        </DiscoverySection>
+                        </section>
 
 
-                        {/* BUDGET */}
+                        {/* =================================================
+                            STEP 2 — BUDGET
+                        ================================================== */}
 
-                        <DiscoverySection
-                            number="02"
-                            title={
-                                french
-                                    ? "Quel est votre budget ?"
-                                    : "What's your budget?"
-                            }
-                            subtitle={
-                                french
-                                    ? "Nous privilégions les endroits qui correspondent vraiment à votre budget."
-                                    : "We'll prioritize places that genuinely fit your budget."
-                            }
+                        <section
+                            className="nt-discovery-step"
                         >
 
-                            <div className="nt-budget-grid">
+                            <div
+                                className="nt-discovery-step-header"
+                            >
 
-                                {NICE_THINGS.budgets.map(
-                                    (
-                                        value
-                                    ) => (
+                                <div
+                                    className="nt-discovery-step-number"
+                                >
+                                    2
+                                </div>
+
+
+                                <div>
+
+                                    <h2>
+                                        {t(
+                                            "chooseBudget"
+                                        )}
+                                    </h2>
+
+                                    <p>
+                                        {t(
+                                            "budgetHelp"
+                                        )}
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+
+                            <div
+                                className="nt-budget-grid"
+                            >
+
+                                {budgets.map(
+                                    value => (
                                         <button
-                                            type="button"
                                             key={
                                                 value
                                             }
-                                            className={
-                                                budget ===
-                                                    value &&
-                                                    !customBudget
-                                                    ? "active"
-                                                    : ""
-                                            }
+                                            type="button"
                                             onClick={() => {
                                                 setBudget(
                                                     value
@@ -598,267 +1162,686 @@ export default function FindPage() {
                                                 setCustomBudget(
                                                     ""
                                                 );
+
+                                                setError(
+                                                    ""
+                                                );
                                             }}
+                                            className={
+                                                Number(
+                                                    budget
+                                                ) ===
+                                                    Number(
+                                                        value
+                                                    ) &&
+                                                    !customBudget
+                                                    ? "nt-budget-option selected"
+                                                    : "nt-budget-option"
+                                            }
                                         >
-                                            {value.toLocaleString()}
+                                            {Number(
+                                                value
+                                            ).toLocaleString(
+                                                "fr-FR"
+                                            )}{" "}
+                                            FCFA
                                         </button>
                                     )
                                 )}
 
                             </div>
 
-                            <div className="nt-custom-budget">
-                                <span>
-                                    FCFA
-                                </span>
+
+                            <div
+                                style={{
+                                    marginTop:
+                                        "12px",
+                                }}
+                            >
+
+                                <label
+                                    htmlFor="customBudget"
+                                    className="nt-label"
+                                >
+                                    {t(
+                                        "customBudget"
+                                    )}
+                                </label>
+
 
                                 <input
+                                    id="customBudget"
                                     type="number"
-                                    min="100"
+                                    min="1"
+                                    inputMode="numeric"
                                     value={
                                         customBudget
                                     }
-                                    onChange={(
-                                        event
-                                    ) => {
+                                    onChange={event => {
                                         setCustomBudget(
                                             event
                                                 .target
                                                 .value
                                         );
 
-                                        setBudget(
-                                            null
+                                        setError(
+                                            ""
                                         );
                                     }}
-                                    placeholder={
-                                        french
-                                            ? "Autre montant"
-                                            : "Another amount"
-                                    }
+                                    placeholder={t(
+                                        "customBudgetPlaceholder"
+                                    )}
+                                    className="nt-input"
                                 />
-                            </div>
-
-                        </DiscoverySection>
-
-
-                        {/* PEOPLE */}
-
-                        <DiscoverySection
-                            number="03"
-                            title={
-                                french
-                                    ? "Pour combien de personnes ?"
-                                    : "How many people?"
-                            }
-                            subtitle={
-                                french
-                                    ? "Le budget sera interprété selon le nombre de personnes."
-                                    : "Your budget will be interpreted according to the group size."
-                            }
-                        >
-
-                            <div className="nt-people-grid">
-
-                                {NICE_THINGS.people.map(
-                                    (
-                                        value
-                                    ) => (
-                                        <button
-                                            type="button"
-                                            key={
-                                                value
-                                            }
-                                            className={
-                                                people ===
-                                                    value
-                                                    ? "active"
-                                                    : ""
-                                            }
-                                            onClick={() =>
-                                                setPeople(
-                                                    value
-                                                )
-                                            }
-                                        >
-                                            <Users
-                                                size={17}
-                                            />
-
-                                            {value ===
-                                                4
-                                                ? "4+"
-                                                : value}
-                                        </button>
-                                    )
-                                )}
 
                             </div>
 
-                        </DiscoverySection>
+                        </section>
 
 
-                        {/* CATEGORY */}
+                        {/* =================================================
+                            STEP 3 — PEOPLE
+                        ================================================== */}
 
-                        <DiscoverySection
-                            number="04"
-                            title={
-                                french
-                                    ? "Qu'est-ce qui vous ferait plaisir ?"
-                                    : "What are you in the mood for?"
-                            }
-                            subtitle={
-                                french
-                                    ? "Facultatif — nous pouvons aussi vous surprendre."
-                                    : "Optional — we can also surprise you."
-                            }
+                        <section
+                            className="nt-discovery-step"
                         >
 
-                            <div className="nt-category-grid">
+                            <div
+                                className="nt-discovery-step-header"
+                            >
 
-                                {NICE_THINGS.categories.map(
-                                    (
-                                        item
-                                    ) => (
-                                        <button
-                                            type="button"
-                                            key={
-                                                item.id
-                                            }
-                                            className={
-                                                category ===
+                                <div
+                                    className="nt-discovery-step-number"
+                                >
+                                    3
+                                </div>
+
+
+                                <div>
+
+                                    <h2>
+                                        {t(
+                                            "people"
+                                        )}
+                                    </h2>
+
+                                    <p>
+                                        {t(
+                                            "peopleHelp"
+                                        )}
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+
+                            <div
+                                className="nt-people-selector"
+                            >
+
+                                <div
+                                    style={{
+                                        minWidth:
+                                            0,
+                                    }}
+                                >
+
+                                    <strong>
+                                        {t(
+                                            "howManyPeople"
+                                        )}
+                                    </strong>
+
+                                    <div
+                                        style={{
+                                            marginTop:
+                                                "4px",
+
+                                            color:
+                                                "var(--nt-muted)",
+
+                                            fontSize:
+                                                "0.78rem",
+                                        }}
+                                    >
+                                        {Number(
+                                            people
+                                        ) === 1
+                                            ? t(
+                                                "onePerson"
+                                            )
+                                            : `${people} ${t(
+                                                "people"
+                                            )}`}
+                                    </div>
+
+                                </div>
+
+
+                                <div
+                                    className="nt-people-controls"
+                                >
+
+                                    <button
+                                        type="button"
+                                        className="nt-people-button"
+                                        onClick={
+                                            decreasePeople
+                                        }
+                                        disabled={
+                                            people <=
+                                            Math.min(
+                                                ...peopleOptions
+                                            )
+                                        }
+                                        aria-label={t(
+                                            "decreasePeople"
+                                        )}
+                                    >
+                                        −
+                                    </button>
+
+
+                                    <div
+                                        className="nt-people-count"
+                                        aria-live="polite"
+                                    >
+                                        {people}
+                                    </div>
+
+
+                                    <button
+                                        type="button"
+                                        className="nt-people-button"
+                                        onClick={
+                                            increasePeople
+                                        }
+                                        disabled={
+                                            people >=
+                                            Math.max(
+                                                ...peopleOptions
+                                            )
+                                        }
+                                        aria-label={t(
+                                            "increasePeople"
+                                        )}
+                                    >
+                                        +
+                                    </button>
+
+                                </div>
+
+                            </div>
+
+                        </section>
+
+
+                        {/* =================================================
+                            STEP 4 — CATEGORY
+                        ================================================== */}
+
+                        <section
+                            className="nt-discovery-step"
+                        >
+
+                            <div
+                                className="nt-discovery-step-header"
+                            >
+
+                                <div
+                                    className="nt-discovery-step-number"
+                                >
+                                    4
+                                </div>
+
+
+                                <div>
+
+                                    <h2>
+                                        {t(
+                                            "category"
+                                        )}
+                                    </h2>
+
+                                    <p>
+                                        {t(
+                                            "categoryHelp"
+                                        )}
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+
+                            <div
+                                className="nt-category-grid"
+                            >
+
+                                {categories.map(
+                                    item => {
+                                        const isSelected =
+                                            category ===
+                                            item.id;
+
+
+                                        const itemName =
+                                            getCategoryName(
+                                                item
+                                            );
+
+
+                                        return (
+                                            <button
+                                                key={
                                                     item.id
-                                                    ? "active"
-                                                    : ""
-                                            }
-                                            onClick={() =>
-                                                setCategory(
-                                                    category ===
-                                                        item.id
-                                                        ? ""
-                                                        : item.id
-                                                )
-                                            }
-                                        >
-                                            <span>
-                                                {
-                                                    item.icon
                                                 }
-                                            </span>
+                                                type="button"
+                                                className={
+                                                    isSelected
+                                                        ? "nt-category-card selected"
+                                                        : "nt-category-card"
+                                                }
+                                                onClick={() => {
+                                                    setCategory(
+                                                        isSelected
+                                                            ? ""
+                                                            : item.id
+                                                    );
 
-                                            <strong>
-                                                {
-                                                    french
-                                                        ? item.fr
-                                                        : item.en
+                                                    setError(
+                                                        ""
+                                                    );
+                                                }}
+                                                aria-pressed={
+                                                    isSelected
                                                 }
-                                            </strong>
-                                        </button>
-                                    )
+                                            >
+
+                                                <div
+                                                    className="nt-category-icon"
+                                                >
+                                                    <span
+                                                        aria-hidden="true"
+                                                    >
+                                                        {
+                                                            item.icon
+                                                        }
+                                                    </span>
+                                                </div>
+
+
+                                                <div
+                                                    style={{
+                                                        minWidth:
+                                                            0,
+                                                    }}
+                                                >
+                                                    <strong>
+                                                        {
+                                                            itemName
+                                                        }
+                                                    </strong>
+                                                </div>
+
+                                            </button>
+                                        );
+                                    }
                                 )}
 
                             </div>
 
-                        </DiscoverySection>
+
+                            <button
+                                type="button"
+                                className={
+                                    !category
+                                        ? "nt-location-option active"
+                                        : "nt-location-option"
+                                }
+                                onClick={() =>
+                                    setCategory("")
+                                }
+                                style={{
+                                    width:
+                                        "100%",
+
+                                    justifyContent:
+                                        "center",
+
+                                    marginTop:
+                                        "10px",
+                                }}
+                            >
+
+                                <Search
+                                    size={17}
+                                />
+
+                                <span>
+                                    {t(
+                                        "anyCategory"
+                                    )}
+                                </span>
+
+                            </button>
+
+                        </section>
 
 
-                        {/* ERROR */}
+                        {/* =================================================
+                            SEARCH SUMMARY
+                        ================================================== */}
 
-                        {error && (
-                            <div className="nt-discovery-error">
-                                {error}
-                            </div>
-                        )}
-
-
-                        {/* SEARCH */}
-
-                        <button
-                            type="submit"
-                            className="nt-discovery-submit"
-                            disabled={
-                                searching
-                            }
+                        <section
+                            style={{
+                                marginTop:
+                                    "20px",
+                            }}
                         >
 
-                            <span>
-                                {searching
-                                    ? french
-                                        ? "Recherche en cours..."
-                                        : "Finding your spots..."
-                                    : french
-                                        ? "Trouver mon spot"
-                                        : "Find my spot"}
-                            </span>
+                            <div
+                                className="nt-section-header"
+                            >
 
-                            {searching ? (
-                                <span className="nt-loading-dot">
-                                    •••
-                                </span>
-                            ) : (
-                                <ArrowRight
-                                    size={20}
-                                />
+                                <h3>
+                                    {t(
+                                        "yourSearch"
+                                    )}
+                                </h3>
+
+                                <p>
+                                    {t(
+                                        "yourSearchDescription"
+                                    )}
+                                </p>
+
+                            </div>
+
+
+                            <div
+                                className="nt-search-summary"
+                            >
+
+                                {/* LOCATION */}
+
+                                <div
+                                    className="nt-search-summary-item"
+                                >
+
+                                    <MapPin
+                                        size={14}
+                                    />
+
+                                    <strong>
+                                        {locationText ||
+                                            t(
+                                                "location"
+                                            )}
+                                    </strong>
+
+                                </div>
+
+
+                                {/* BUDGET */}
+
+                                <div
+                                    className="nt-search-summary-item"
+                                >
+
+                                    <span>
+                                        {t(
+                                            "budget"
+                                        )}
+                                    </span>
+
+                                    <strong>
+                                        {finalBudget
+                                            ? finalBudget.toLocaleString(
+                                                "fr-FR"
+                                            )
+                                            : "—"}{" "}
+                                        FCFA
+                                    </strong>
+
+                                </div>
+
+
+                                {/* PEOPLE */}
+
+                                <div
+                                    className="nt-search-summary-item"
+                                >
+
+                                    <Users
+                                        size={14}
+                                    />
+
+                                    <strong>
+                                        {people}
+                                    </strong>
+
+                                    <span>
+                                        {Number(
+                                            people
+                                        ) === 1
+                                            ? t(
+                                                "person"
+                                            )
+                                            : t(
+                                                "people"
+                                            )}
+                                    </span>
+
+                                </div>
+
+
+                                {/* CATEGORY */}
+
+                                {selectedCategory && (
+                                    <div
+                                        className="nt-search-summary-item"
+                                    >
+
+                                        <Sparkles
+                                            size={14}
+                                        />
+
+                                        <strong>
+                                            {getCategoryName(
+                                                selectedCategory
+                                            )}
+                                        </strong>
+
+                                    </div>
+                                )}
+
+                            </div>
+
+                        </section>
+
+
+                        {/* =================================================
+                            ERROR
+                        ================================================== */}
+
+                        {error &&
+                            !locationError && (
+                                <div
+                                    className="nt-access-error"
+                                    role="alert"
+                                    style={{
+                                        marginTop:
+                                            "18px",
+                                    }}
+                                >
+                                    {error}
+                                </div>
                             )}
 
-                        </button>
+
+                        {/* =================================================
+                            SEARCH BUTTON
+                        ================================================== */}
+
+                        <div
+                            className="nt-search-action"
+                        >
+
+                            <button
+                                type="submit"
+                                disabled={
+                                    searching ||
+                                    loadingLocation
+                                }
+                            >
+
+                                {searching ? (
+                                    <>
+                                        <span
+                                            className="nt-loading-spinner"
+                                            style={{
+                                                width:
+                                                    "20px",
+
+                                                height:
+                                                    "20px",
+
+                                                borderWidth:
+                                                    "2px",
+
+                                                borderColor:
+                                                    "rgba(255,255,255,0.35)",
+
+                                                borderTopColor:
+                                                    "#FFFFFF",
+                                            }}
+                                        />
+
+                                        <span>
+                                            {t(
+                                                "searching"
+                                            )}
+                                        </span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Search
+                                            size={19}
+                                        />
+
+                                        <span>
+                                            {t(
+                                                "findSpot"
+                                            )}
+                                        </span>
+
+                                        <ArrowRight
+                                            size={19}
+                                        />
+                                    </>
+                                )}
+
+                            </button>
+
+                        </div>
+
+
+                        {/* =================================================
+                            FRIENDLY MESSAGE
+                        ================================================== */}
+
+                        <div
+                            style={{
+                                marginTop:
+                                    "16px",
+
+                                display:
+                                    "flex",
+
+                                alignItems:
+                                    "flex-start",
+
+                                justifyContent:
+                                    "center",
+
+                                gap: "7px",
+
+                                color:
+                                    "var(--nt-muted)",
+
+                                fontSize:
+                                    "0.76rem",
+
+                                lineHeight:
+                                    "1.45",
+
+                                textAlign:
+                                    "center",
+                            }}
+                        >
+
+                            <Sparkles
+                                size={14}
+                                style={{
+                                    flex:
+                                        "0 0 auto",
+
+                                    marginTop:
+                                        "2px",
+
+                                    color:
+                                        "var(--nt-red)",
+                                }}
+                            />
+
+                            <span>
+                                {t(
+                                    "searchFriendlyMessage"
+                                )}
+                            </span>
+
+                        </div>
 
                     </form>
 
 
-                    <div className="nt-find-trust">
-                        <span>
-                            ✦
-                        </span>
+                    {/* =================================================
+                        HELP
+                    ================================================== */}
 
-                        {french
-                            ? "Des recommandations pensées pour vous."
-                            : "Recommendations thoughtfully matched to you."}
+                    <div
+                        style={{
+                            marginTop:
+                                "18px",
+
+                            padding:
+                                "16px",
+
+                            textAlign:
+                                "center",
+
+                            color:
+                                "var(--nt-muted)",
+
+                            fontSize:
+                                "0.78rem",
+
+                            lineHeight:
+                                "1.5",
+                        }}
+                    >
+                        {t(
+                            "needHelp"
+                        )}
                     </div>
 
-                </section>
-
-            </main>
-        </AppShell>
-    );
-}
-
-
-/* ============================================================
-   DISCOVERY SECTION
-============================================================ */
-
-function DiscoverySection({
-    number,
-    title,
-    subtitle,
-    children,
-}) {
-    return (
-        <section className="nt-discovery-section">
-
-            <div className="nt-discovery-section-heading">
-
-                <span className="nt-section-number">
-                    {number}
-                </span>
-
-                <div>
-                    <h2>
-                        {title}
-                    </h2>
-
-                    <p>
-                        {subtitle}
-                    </p>
                 </div>
 
-            </div>
+            </main>
 
-            <div>
-                {children}
-            </div>
-
-        </section>
+        </AppShell>
     );
 }

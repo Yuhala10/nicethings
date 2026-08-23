@@ -30,8 +30,37 @@ export default async function handler(
             error,
         } = await supabaseAdmin
             .from("nt_spots")
-            .select("*")
-            .eq("id", id)
+            .select(`
+                id,
+                name,
+                slug,
+                description,
+                category,
+                cuisine,
+                address,
+                neighborhood,
+                city,
+                latitude,
+                longitude,
+                phone,
+                whatsapp,
+                minimum_price,
+                maximum_price,
+                average_price,
+                currency,
+                opening_time,
+                closing_time,
+                rating,
+                review_count,
+                verified,
+                price_verified_at,
+                location_verified_at,
+                featured
+            `)
+            .eq(
+                "id",
+                id
+            )
             .eq(
                 "status",
                 "APPROVED"
