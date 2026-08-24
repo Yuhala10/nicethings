@@ -275,7 +275,20 @@ export default async function handler(
 
             return res.status(500).json({
                 error:
+                    error.message ||
                     "Unable to submit the spot.",
+
+                details:
+                    error.details ||
+                    null,
+
+                hint:
+                    error.hint ||
+                    null,
+
+                code:
+                    error.code ||
+                    null,
             });
         }
 
