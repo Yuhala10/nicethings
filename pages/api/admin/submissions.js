@@ -1,90 +1,59 @@
 import supabaseAdmin from "../../../lib/supabaseAdmin";
 import { requireAdmin } from "../../../lib/adminAuth";
 
-export default async function handler(
-    req,
-    res
-) {
-    if (
-        !requireAdmin(
-            req,
-            res
-        )
-    ) {
+export default async function handler(req, res) {
+    if (!requireAdmin(req, res)) {
         return;
     }
 
-    if (
-        req.method === "GET"
-    ) {
-        return getSubmissions(
-            req,
-            res
-        );
+    if (req.method === "GET") {
+        return getSubmissions(req, res);
     }
 
-    if (
-        req.method === "POST"
-    ) {
-        return reviewSubmission(
-            req,
-            res
-        );
+    if (req.method === "POST") {
+        return reviewSubmission(req, res);
     }
 
     return res.status(405).json({
-        error:
-            "Method not allowed.",
+        error: "Method not allowed.",
     });
 }
-
 
 /* =========================================================
    GET SUBMISSIONS
 ========================================================= */
 
-async function getSubmissions(
-    req,
-    res
-) {
+async function getSubmissions(req, res) {
     try {
         const {
             data,
             error,
-        } =
-            await supabaseAdmin
-                .from(
-                    "nt_submissions"
-                )
-                .select(`
-                    id,
-                    visitor_id,
-                    spot_name,
-                    category,
-                    description,
-                    address,
-                    neighborhood,
-                    city,
-                    latitude,
-                    longitude,
-                    phone,
-                    whatsapp,
-                    estimated_price,
-                    submitted_by_name,
-                    submitted_by_phone,
-                    status,
-                    admin_note,
-                    created_at,
-                    reviewed_at
-                `)
-                .order(
-                    "created_at",
-                    {
-                        ascending:
-                            false,
-                    }
-                );
-
+        } = await supabaseAdmin
+            .from("nt_spot_submissions")
+            .select(`
+                id,
+                visitor_id,
+                name,
+                category,
+                description,
+                address,
+                neighborhood,
+                city,
+                latitude,
+                longitude,
+                phone,
+                whatsapp,
+                price_information,
+                opening_hours,
+                status,
+                admin_note,
+                created_at,
+                updated_at,
+                reviewed_at
+            `)
+            .order("created_at", {
+                ascending: false,
+            });
 
         if (error) {
             console.error(
@@ -94,18 +63,15 @@ async function getSubmissions(
 
             return res.status(500).json({
                 error:
+                    error.message ||
                     "Unable to load submissions.",
             });
         }
 
-
         return res.status(200).json({
-            submissions:
-                data || [],
+            submissions: data || [],
         });
-    } catch (
-    error
-    ) {
+    } catch (error) {
         console.error(
             "Get submissions error:",
             error
@@ -113,35 +79,27 @@ async function getSubmissions(
 
         return res.status(500).json({
             error:
+                error.message ||
                 "Unable to load submissions.",
         });
     }
 }
 
-
 /* =========================================================
    REVIEW SUBMISSION
 ========================================================= */
 
-async function reviewSubmission(
-    req,
-    res
-) {
+async function reviewSubmission(req, res) {
     try {
         const {
             submissionId,
             decision,
             adminNote,
-        } =
-            req.body || {};
-
+        } = req.body || {};
 
         if (
             !submissionId ||
-            ![
-                "APPROVE",
-                "REJECT",
-            ].includes(
+            !["APPROVE", "REJECT"].includes(
                 decision
             )
         ) {
@@ -151,28 +109,18 @@ async function reviewSubmission(
             });
         }
 
-
-        /* =================================================
+        /* -------------------------------------------------
            LOAD SUBMISSION
-        ================================================== */
+        ------------------------------------------------- */
 
         const {
             data: submission,
             error: submissionError,
-        } =
-            await supabaseAdmin
-                .from(
-                    "nt_submissions"
-                )
-                .select(
-                    "*"
-                )
-                .eq(
-                    "id",
-                    submissionId
-                )
-                .maybeSingle();
-
+        } = await supabaseAdmin
+            .from("nt_spot_submissions")
+            .select("*")
+            .eq("id", submissionId)
+            .maybeSingle();
 
         if (submissionError) {
             console.error(
@@ -182,10 +130,10 @@ async function reviewSubmission(
 
             return res.status(500).json({
                 error:
+                    submissionError.message ||
                     "Unable to load submission.",
             });
         }
-
 
         if (!submission) {
             return res.status(404).json({
@@ -194,10 +142,9 @@ async function reviewSubmission(
             });
         }
 
-
-        /* =================================================
+        /* -------------------------------------------------
            PREVENT DOUBLE REVIEW
-        ================================================== */
+        ------------------------------------------------- */
 
         if (
             submission.status !==
@@ -209,26 +156,22 @@ async function reviewSubmission(
             });
         }
 
-
         const now =
             new Date().toISOString();
-
 
         /* =================================================
            REJECT
         ================================================== */
 
         if (
-            decision ===
-            "REJECT"
+            decision === "REJECT"
         ) {
             const {
-                error:
-                rejectError,
+                error: rejectError,
             } =
                 await supabaseAdmin
                     .from(
-                        "nt_submissions"
+                        "nt_spot_submissions"
                     )
                     .update({
                         status:
@@ -240,16 +183,16 @@ async function reviewSubmission(
 
                         reviewed_at:
                             now,
+
+                        updated_at:
+                            now,
                     })
                     .eq(
                         "id",
                         submission.id
                     );
 
-
-            if (
-                rejectError
-            ) {
+            if (rejectError) {
                 console.error(
                     "Submission rejection:",
                     rejectError
@@ -257,38 +200,121 @@ async function reviewSubmission(
 
                 return res.status(500).json({
                     error:
+                        rejectError.message ||
                         "Unable to reject submission.",
                 });
             }
 
+            await supabaseAdmin
+                .from(
+                    "nt_admin_audit_log"
+                )
+                .insert({
+                    action:
+                        "SUBMISSION_REJECTED",
+
+                    target_type:
+                        "submission",
+
+                    target_id:
+                        submission.id,
+
+                    note:
+                        adminNote ||
+                        null,
+                });
 
             return res.status(200).json({
-                success:
-                    true,
+                success: true,
             });
         }
-
 
         /* =================================================
            APPROVE
         ================================================== */
 
         /*
-         * Convert the community submission into
-         * a real NiceThings spot.
+         * The submission stores price information as TEXT.
          *
-         * We map only columns that actually exist
-         * in nt_spots.
+         * nt_spots stores prices as INTEGER fields.
+         *
+         * We therefore extract the first usable number
+         * from the submitted price text.
          */
 
-        const estimatedPrice =
-            submission.estimated_price !=
-                null
-                ? Number(
-                    submission.estimated_price
+        const priceText =
+            submission.price_information
+                ? String(
+                    submission.price_information
+                )
+                : "";
+
+        const priceMatches =
+            priceText.match(
+                /\d[\d\s,.]*/g
+            ) || [];
+
+        const prices =
+            priceMatches
+                .map((value) =>
+                    Number(
+                        value
+                            .replace(
+                                /\s/g,
+                                ""
+                            )
+                            .replace(
+                                /,/g,
+                                ""
+                            )
+                            .replace(
+                                /\./g,
+                                ""
+                            )
+                    )
+                )
+                .filter(
+                    (value) =>
+                        Number.isFinite(
+                            value
+                        ) &&
+                        value > 0
+                );
+
+        const minimumPrice =
+            prices.length > 0
+                ? Math.min(
+                    ...prices
                 )
                 : null;
 
+        const maximumPrice =
+            prices.length > 1
+                ? Math.max(
+                    ...prices
+                )
+                : minimumPrice;
+
+        const averagePrice =
+            minimumPrice !==
+                null &&
+                maximumPrice !==
+                null
+                ? Math.round(
+                    (
+                        minimumPrice +
+                        maximumPrice
+                    ) / 2
+                )
+                : null;
+
+        /*
+         * opening_hours is stored as text in the submission.
+         *
+         * We do not guess exact opening/closing times.
+         * Those remain null unless a future admin editing
+         * feature provides structured times.
+         */
 
         const {
             data: spot,
@@ -300,7 +326,7 @@ async function reviewSubmission(
                 )
                 .insert({
                     name:
-                        submission.spot_name,
+                        submission.name,
 
                     description:
                         submission.description ||
@@ -308,26 +334,26 @@ async function reviewSubmission(
 
                     category:
                         submission.category ||
+                        "other",
+
+                    city:
+                        submission.city ||
+                        "Yaoundé",
+
+                    neighborhood:
+                        submission.neighborhood ||
                         null,
 
                     address:
                         submission.address ||
                         null,
 
-                    neighborhood:
-                        submission.neighborhood ||
-                        null,
-
-                    city:
-                        submission.city ||
-                        "Yaoundé",
-
                     latitude:
-                        submission.latitude ||
+                        submission.latitude ??
                         null,
 
                     longitude:
-                        submission.longitude ||
+                        submission.longitude ??
                         null,
 
                     phone:
@@ -338,29 +364,20 @@ async function reviewSubmission(
                         submission.whatsapp ||
                         null,
 
+                    average_price:
+                        averagePrice,
+
                     minimum_price:
-                        Number.isFinite(
-                            estimatedPrice
-                        )
-                            ? estimatedPrice
-                            : null,
+                        minimumPrice,
 
                     maximum_price:
-                        Number.isFinite(
-                            estimatedPrice
-                        )
-                            ? estimatedPrice
-                            : null,
+                        maximumPrice,
 
-                    average_price:
-                        Number.isFinite(
-                            estimatedPrice
-                        )
-                            ? estimatedPrice
-                            : null,
+                    opening_time:
+                        null,
 
-                    currency:
-                        "XAF",
+                    closing_time:
+                        null,
 
                     rating:
                         0,
@@ -369,27 +386,22 @@ async function reviewSubmission(
                         0,
 
                     verified:
-                        false,
-
-                    featured:
-                        false,
+                        true,
 
                     status:
                         "APPROVED",
 
-                    submitted_by:
+                    featured:
+                        false,
+
+                    created_by:
                         submission.visitor_id ||
                         null,
                 })
-                .select(
-                    "id"
-                )
+                .select("id")
                 .single();
 
-
-        if (
-            spotError
-        ) {
+        if (spotError) {
             console.error(
                 "Spot creation:",
                 spotError
@@ -397,22 +409,21 @@ async function reviewSubmission(
 
             return res.status(500).json({
                 error:
+                    spotError.message ||
                     "Unable to create the approved spot.",
             });
         }
-
 
         /* =================================================
            MARK SUBMISSION APPROVED
         ================================================== */
 
         const {
-            error:
-            approveError,
+            error: approveError,
         } =
             await supabaseAdmin
                 .from(
-                    "nt_submissions"
+                    "nt_spot_submissions"
                 )
                 .update({
                     status:
@@ -424,43 +435,71 @@ async function reviewSubmission(
 
                     reviewed_at:
                         now,
+
+                    updated_at:
+                        now,
+
+                    spot_id:
+                        spot.id,
                 })
                 .eq(
                     "id",
                     submission.id
                 );
 
-
-        if (
-            approveError
-        ) {
+        if (approveError) {
             console.error(
                 "Submission approval update:",
                 approveError
             );
 
-            /*
-             * The spot has already been created.
-             * Tell the admin exactly what happened.
-             */
-
             return res.status(500).json({
                 error:
-                    "Spot was created but the submission status could not be updated. Please inspect the records.",
+                    approveError.message ||
+                    "Spot was created but submission status could not be updated.",
             });
         }
 
+        /* =================================================
+           AUDIT LOG
+        ================================================== */
+
+        const {
+            error: auditError,
+        } =
+            await supabaseAdmin
+                .from(
+                    "nt_admin_audit_log"
+                )
+                .insert({
+                    action:
+                        "SUBMISSION_APPROVED",
+
+                    target_type:
+                        "submission",
+
+                    target_id:
+                        submission.id,
+
+                    note:
+                        adminNote ||
+                        null,
+                });
+
+        if (auditError) {
+            console.error(
+                "Submission approval audit:",
+                auditError
+            );
+        }
 
         return res.status(200).json({
-            success:
-                true,
+            success: true,
 
             spotId:
                 spot.id,
         });
-    } catch (
-    error
-    ) {
+    } catch (error) {
         console.error(
             "Submission review error:",
             error
@@ -468,6 +507,7 @@ async function reviewSubmission(
 
         return res.status(500).json({
             error:
+                error.message ||
                 "Unable to review submission.",
         });
     }
