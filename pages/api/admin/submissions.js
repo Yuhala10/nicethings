@@ -30,27 +30,7 @@ async function getSubmissions(req, res) {
             error,
         } = await supabaseAdmin
             .from("nt_spot_submissions")
-            .select(`
-                id,
-                visitor_id,
-                name,
-                category,
-                description,
-                address,
-                neighborhood,
-                city,
-                latitude,
-                longitude,
-                phone,
-                whatsapp,
-                price_information,
-                opening_hours,
-                status,
-                admin_note,
-                created_at,
-                updated_at,
-                reviewed_at
-            `)
+            .select("*")
             .order("created_at", {
                 ascending: false,
             });
@@ -109,9 +89,9 @@ async function reviewSubmission(req, res) {
             });
         }
 
-        /* -------------------------------------------------
+        /* =================================================
            LOAD SUBMISSION
-        ------------------------------------------------- */
+        ================================================== */
 
         const {
             data: submission,
@@ -141,10 +121,6 @@ async function reviewSubmission(req, res) {
                     "Submission not found.",
             });
         }
-
-        /* -------------------------------------------------
-           PREVENT DOUBLE REVIEW
-        ------------------------------------------------- */
 
         if (
             submission.status !==
@@ -205,24 +181,31 @@ async function reviewSubmission(req, res) {
                 });
             }
 
-            await supabaseAdmin
-                .from(
-                    "nt_admin_audit_log"
-                )
-                .insert({
-                    action:
-                        "SUBMISSION_REJECTED",
+            try {
+                await supabaseAdmin
+                    .from(
+                        "nt_admin_audit_log"
+                    )
+                    .insert({
+                        action:
+                            "SUBMISSION_REJECTED",
 
-                    target_type:
-                        "submission",
+                        target_type:
+                            "submission",
 
-                    target_id:
-                        submission.id,
+                        target_id:
+                            submission.id,
 
-                    note:
-                        adminNote ||
-                        null,
-                });
+                        note:
+                            adminNote ||
+                            null,
+                    });
+            } catch (auditError) {
+                console.error(
+                    "Rejection audit:",
+                    auditError
+                );
+            }
 
             return res.status(200).json({
                 success: true,
@@ -234,12 +217,8 @@ async function reviewSubmission(req, res) {
         ================================================== */
 
         /*
-         * The submission stores price information as TEXT.
-         *
-         * nt_spots stores prices as INTEGER fields.
-         *
-         * We therefore extract the first usable number
-         * from the submitted price text.
+         * Convert submitted price text into the numeric
+         * fields used by nt_spots.
          */
 
         const priceText =
@@ -308,22 +287,16 @@ async function reviewSubmission(req, res) {
                 )
                 : null;
 
-        /*
-         * opening_hours is stored as text in the submission.
-         *
-         * We do not guess exact opening/closing times.
-         * Those remain null unless a future admin editing
-         * feature provides structured times.
-         */
+        /* =================================================
+           CREATE PUBLIC SPOT
+        ================================================== */
 
         const {
             data: spot,
             error: spotError,
         } =
             await supabaseAdmin
-                .from(
-                    "nt_spots"
-                )
+                .from("nt_spots")
                 .insert({
                     name:
                         submission.name,
@@ -373,12 +346,6 @@ async function reviewSubmission(req, res) {
                     maximum_price:
                         maximumPrice,
 
-                    opening_time:
-                        null,
-
-                    closing_time:
-                        null,
-
                     rating:
                         0,
 
@@ -418,6 +385,12 @@ async function reviewSubmission(req, res) {
            MARK SUBMISSION APPROVED
         ================================================== */
 
+        /*
+         * IMPORTANT:
+         * nt_spot_submissions does NOT contain spot_id.
+         * Therefore we only update its own fields here.
+         */
+
         const {
             error: approveError,
         } =
@@ -438,9 +411,6 @@ async function reviewSubmission(req, res) {
 
                     updated_at:
                         now,
-
-                    spot_id:
-                        spot.id,
                 })
                 .eq(
                     "id",
@@ -464,31 +434,38 @@ async function reviewSubmission(req, res) {
            AUDIT LOG
         ================================================== */
 
-        const {
-            error: auditError,
-        } =
-            await supabaseAdmin
-                .from(
-                    "nt_admin_audit_log"
-                )
-                .insert({
-                    action:
-                        "SUBMISSION_APPROVED",
+        try {
+            const {
+                error: auditError,
+            } =
+                await supabaseAdmin
+                    .from(
+                        "nt_admin_audit_log"
+                    )
+                    .insert({
+                        action:
+                            "SUBMISSION_APPROVED",
 
-                    target_type:
-                        "submission",
+                        target_type:
+                            "submission",
 
-                    target_id:
-                        submission.id,
+                        target_id:
+                            submission.id,
 
-                    note:
-                        adminNote ||
-                        null,
-                });
+                        note:
+                            adminNote ||
+                            null,
+                    });
 
-        if (auditError) {
+            if (auditError) {
+                console.error(
+                    "Approval audit:",
+                    auditError
+                );
+            }
+        } catch (auditError) {
             console.error(
-                "Submission approval audit:",
+                "Approval audit exception:",
                 auditError
             );
         }
