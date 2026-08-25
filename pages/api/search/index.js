@@ -31,6 +31,10 @@ export default async function handler(
             language = "en",
         } = req.body || {};
 
+        /* =====================================================
+           SESSION
+        ====================================================== */
+
         if (!visitorId) {
             return res.status(400).json({
                 error:
@@ -40,14 +44,10 @@ export default async function handler(
             });
         }
 
-        /*
-         * ADMIN ACCESS
-         *
-         * Admin authentication is based on
-         * the protected server-side cookie.
-         *
-         * Admin never needs to pay.
-         */
+        /* =====================================================
+           ADMIN ACCESS
+        ====================================================== */
+
         const adminToken =
             getAdminCookie(req);
 
@@ -56,23 +56,22 @@ export default async function handler(
                 adminToken
             );
 
-        /*
-         * LAUNCH WEEK
-         *
-         * Everyone gets free discovery
-         * until the configured launch date.
-         */
+        /* =====================================================
+           LAUNCH ACCESS
+        ====================================================== */
+
         const launchFree =
             isLaunchFree();
 
         let access = null;
 
         /*
-         * AFTER LAUNCH:
+         * After launch, normal visitors
+         * need an active discovery pass.
          *
-         * Only normal users need an
-         * active 24-hour access pass.
+         * Admin does not need one.
          */
+
         if (
             !launchFree &&
             !admin
@@ -140,9 +139,10 @@ export default async function handler(
                 activeAccess;
         }
 
-        /*
-         * Get approved places.
-         */
+        /* =====================================================
+           GET APPROVED SPOTS
+        ====================================================== */
+
         const {
             data: spots,
             error: spotsError,
@@ -196,69 +196,188 @@ export default async function handler(
             });
         }
 
-        /*
-         * Rank places using:
-         * budget
-         * category
-         * distance
-         * verification
-         * rating
-         */
+        /* =====================================================
+           SEARCH VALUES
+        ====================================================== */
+
+        const numericBudget =
+            Number(budget);
+
+        const hasBudget =
+            Number.isFinite(
+                numericBudget
+            ) &&
+            numericBudget > 0;
+
+        const numericPeople =
+            Math.max(
+                Number(people) || 1,
+                1
+            );
+
+        const searchOptions = {
+            latitude:
+                latitude ??
+                null,
+
+            longitude:
+                longitude ??
+                null,
+
+            locationText:
+                locationText ||
+                null,
+
+            budget:
+                hasBudget
+                    ? numericBudget
+                    : null,
+
+            people:
+                numericPeople,
+
+            category:
+                category ||
+                null,
+        };
+
+        /* =====================================================
+           INTELLIGENT RANKING
+        ====================================================== */
+
         const ranked =
             rankSpots(
                 spots || [],
-                {
-                    latitude:
-                        latitude ??
-                        null,
-
-                    longitude:
-                        longitude ??
-                        null,
-
-                    locationText:
-                        locationText ||
-                        null,
-
-                    budget:
-                        Number(
-                            budget
-                        ) || null,
-
-                    people:
-                        Number(
-                            people
-                        ) || 1,
-
-                    category:
-                        category ||
-                        null,
-                }
+                searchOptions
             );
 
-        const results =
-            ranked
-                .slice(0, 10)
-                .map(
-                    (spot) => ({
-                        ...spot,
+        /* =====================================================
+           SPLIT RESULTS
+        ====================================================== */
 
-                        distanceKm:
+        let primaryResults = [];
+        let alternativeResults = [];
+
+        if (hasBudget) {
+            /*
+             * PRIMARY:
+             *
+             * Places within the user's budget
+             * or reasonably close to it.
+             */
+
+            primaryResults =
+                ranked.filter(
+                    spot =>
+                        spot.match &&
+                        (
                             spot.match
-                                ?.distanceKm ??
-                            null,
-                    })
+                                .budgetStatus ===
+                            "WITHIN_BUDGET" ||
+                            spot.match
+                                .budgetStatus ===
+                            "NEAR_BUDGET"
+                        )
                 );
 
+            /*
+             * ALTERNATIVES:
+             *
+             * Places above budget.
+             *
+             * We keep them separate so that
+             * an expensive restaurant does not
+             * compete directly with an affordable
+             * restaurant.
+             */
+
+            alternativeResults =
+                ranked.filter(
+                    spot =>
+                        spot.match &&
+                        spot.match
+                            .budgetStatus ===
+                        "ABOVE_BUDGET"
+                );
+        } else {
+            /*
+             * No budget supplied.
+             *
+             * All ranked places are valid
+             * candidates.
+             */
+
+            primaryResults =
+                ranked;
+        }
+
+        /* =====================================================
+           FALLBACK
+        ====================================================== */
+
         /*
-         * Record search.
+         * If the user has a strict budget but
+         * there are no places within/near it,
+         * do NOT return an empty search.
          *
-         * During free launch week,
-         * access_pass_id remains null.
-         *
-         * Admin searches also remain
-         * independent of paid access.
+         * Instead, show the closest alternatives
+         * and clearly identify them as above budget.
          */
+
+        if (
+            hasBudget &&
+            primaryResults.length === 0
+        ) {
+            primaryResults =
+                alternativeResults.slice(
+                    0,
+                    10
+                );
+
+            alternativeResults = [];
+        }
+
+        /* =====================================================
+           FORMAT RESULTS
+        ====================================================== */
+
+        const formatSpot =
+            spot => ({
+                ...spot,
+
+                distanceKm:
+                    spot.match
+                        ?.distanceKm ??
+                    null,
+
+                matchScore:
+                    spot.match
+                        ?.score ??
+                    0,
+
+                match:
+                    spot.match ||
+                    null,
+            });
+
+        const results =
+            primaryResults
+                .slice(0, 10)
+                .map(
+                    formatSpot
+                );
+
+        const alternatives =
+            alternativeResults
+                .slice(0, 5)
+                .map(
+                    formatSpot
+                );
+
+        /* =====================================================
+           RECORD SEARCH
+        ====================================================== */
+
         const {
             data: search,
             error: searchError,
@@ -288,22 +407,19 @@ export default async function handler(
                         null,
 
                     budget:
-                        Number(
-                            budget
-                        ) || null,
+                        hasBudget
+                            ? numericBudget
+                            : null,
 
                     people:
-                        Number(
-                            people
-                        ) || 1,
+                        numericPeople,
 
                     category:
                         category ||
                         null,
 
                     language:
-                        language ===
-                            "fr"
+                        language === "fr"
                             ? "fr"
                             : "en",
                 })
@@ -316,6 +432,10 @@ export default async function handler(
                 searchError
             );
         }
+
+        /* =====================================================
+           RESPONSE
+        ====================================================== */
 
         return res.status(200).json({
             searchId:
@@ -331,6 +451,46 @@ export default async function handler(
             admin,
 
             results,
+
+            alternatives,
+
+            searchMeta: {
+                budget:
+                    hasBudget
+                        ? numericBudget
+                        : null,
+
+                people:
+                    numericPeople,
+
+                category:
+                    category ||
+                    null,
+
+                locationText:
+                    locationText ||
+                    null,
+
+                usingLocation:
+                    Number.isFinite(
+                        Number(latitude)
+                    ) &&
+                    Number.isFinite(
+                        Number(longitude)
+                    ),
+
+                totalApprovedSpots:
+                    (spots || [])
+                        .length,
+
+                primaryCount:
+                    primaryResults
+                        .length,
+
+                alternativeCount:
+                    alternativeResults
+                        .length,
+            },
         });
     } catch (error) {
         console.error(
@@ -340,7 +500,9 @@ export default async function handler(
 
         return res.status(500).json({
             error:
-                "Something went wrong while finding your places.",
+                language === "fr"
+                    ? "Une erreur s'est produite lors de la recherche."
+                    : "Something went wrong while finding your places.",
         });
     }
 }

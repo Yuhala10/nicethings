@@ -15570,6 +15570,7 @@ body,
         font-size: 0.58rem;
     }
 }
+
 /* =========================================================
    MOBILE NAVIGATION
    Hidden on desktop — shown only on phones
@@ -15656,4 +15657,87 @@ body,
     .nt-app {
         padding-bottom: 0;
     }
+}
+
+/* =========================================================
+   NICETHINGS LIVE MAP
+========================================================= */
+
+.nicethings-user-location-marker {
+    background: transparent !important;
+    border: none !important;
+}
+
+.nicethings-user-location-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #f97316;
+    border: 3px solid #ffffff;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+    position: relative;
+    z-index: 2;
+}
+
+.nicethings-user-location-pulse {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 34px;
+    height: 34px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: rgba(249, 115, 22, 0.18);
+    animation: nicethings-location-pulse 2s infinite;
+    z-index: -1;
+}
+
+.nicethings-map-user-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #f97316;
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+@keyframes nicethings-location-pulse {
+    0% {
+        transform: translate(-50%, -50%) scale(0.7);
+        opacity: 0.8;
+    }
+
+    70% {
+        transform: translate(-50%, -50%) scale(1.5);
+        opacity: 0;
+    }
+
+    100% {
+        transform: translate(-50%, -50%) scale(1.5);
+        opacity: 0;
+    }
+}
+
+/* Leaflet */
+
+.nicethings-map-wrapper .leaflet-container {
+    font-family: inherit;
+}
+
+.nicethings-map-wrapper .leaflet-popup-content {
+    margin: 13px 14px;
+}
+
+.nicethings-map-wrapper .leaflet-popup-content-wrapper {
+    border-radius: 14px;
+}
+
+.nicethings-map-wrapper .leaflet-control-zoom {
+    border: none !important;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14) !important;
+}
+
+.nicethings-map-wrapper .leaflet-control-zoom a {
+    border: none !important;
 }
