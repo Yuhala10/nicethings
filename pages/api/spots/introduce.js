@@ -1,21 +1,14 @@
 import supabaseAdmin from "../../../lib/supabaseAdmin";
 
-export default async function handler(
-    req,
-    res
-) {
-    if (
-        req.method !== "POST"
-    ) {
+export default async function handler(req, res) {
+    if (req.method !== "POST") {
         return res.status(405).json({
-            error:
-                "Method not allowed.",
+            error: "Method not allowed.",
         });
     }
 
     try {
-        const body =
-            req.body || {};
+        const body = req.body || {};
 
         const {
             visitorId,
@@ -34,31 +27,21 @@ export default async function handler(
             openingHours,
         } = body;
 
-
         /* =====================================================
            VALIDATION
         ====================================================== */
 
-        if (
-            !name ||
-            !String(name).trim()
-        ) {
+        if (!name || !String(name).trim()) {
             return res.status(400).json({
-                error:
-                    "Spot name is required.",
+                error: "Spot name is required.",
             });
         }
 
-        if (
-            !address ||
-            !String(address).trim()
-        ) {
+        if (!address || !String(address).trim()) {
             return res.status(400).json({
-                error:
-                    "Spot address is required.",
+                error: "Spot address is required.",
             });
         }
-
 
         /* =====================================================
            NORMALIZE
@@ -100,18 +83,6 @@ export default async function handler(
                 ? String(whatsapp).trim()
                 : null;
 
-        /*
-         * The final database stores price information
-         * as text because submissions can contain things
-         * such as:
-         *
-         * "5,000 - 10,000 FCFA"
-         *
-         * "Around 3,000 FCFA"
-         *
-         * "Affordable"
-         */
-
         let cleanPriceInformation =
             priceInformation
                 ? String(
@@ -120,19 +91,15 @@ export default async function handler(
                 : null;
 
         /*
-         * Backward compatibility with the existing
-         * introduce form if it still sends estimatedPrice.
+         * Backward compatibility with older
+         * introduce forms.
          */
 
         if (
             !cleanPriceInformation &&
-            estimatedPrice !==
-            undefined &&
-            estimatedPrice !==
-            null &&
-            String(
-                estimatedPrice
-            ).trim()
+            estimatedPrice !== undefined &&
+            estimatedPrice !== null &&
+            String(estimatedPrice).trim()
         ) {
             cleanPriceInformation =
                 `${String(
@@ -147,32 +114,77 @@ export default async function handler(
                 ).trim()
                 : null;
 
+        /* =====================================================
+           VISITOR VALIDATION
+        ====================================================== */
+
+        /*
+         * visitor_id is optional in the database.
+         *
+         * However, if the browser sends a visitorId,
+         * we first verify that it actually exists in
+         * nt_visitors.
+         *
+         * This prevents the foreign-key error:
+         *
+         * nt_spot_submissions_visitor_id_fkey
+         *
+         * If the visitor does not exist, we simply use
+         * null instead of blocking the spot submission.
+         */
+
+        let cleanVisitorId = null;
+
+        if (visitorId) {
+            const {
+                data: visitor,
+                error: visitorError,
+            } = await supabaseAdmin
+                .from("nt_visitors")
+                .select("id")
+                .eq(
+                    "id",
+                    visitorId
+                )
+                .maybeSingle();
+
+            if (visitorError) {
+                console.error(
+                    "Visitor lookup error:",
+                    visitorError
+                );
+
+                /*
+                 * Do not fail the spot submission.
+                 *
+                 * visitor_id is optional, so we simply
+                 * continue with null.
+                 */
+            }
+
+            if (visitor) {
+                cleanVisitorId =
+                    visitor.id;
+            }
+        }
 
         /* =====================================================
            COORDINATES
         ====================================================== */
 
-        let cleanLatitude =
-            null;
-
-        let cleanLongitude =
-            null;
-
+        let cleanLatitude = null;
+        let cleanLongitude = null;
 
         if (
-            latitude !==
-            undefined &&
-            latitude !==
-            null &&
+            latitude !== undefined &&
+            latitude !== null &&
             String(latitude).trim()
         ) {
             const value =
                 Number(latitude);
 
             if (
-                Number.isFinite(
-                    value
-                ) &&
+                Number.isFinite(value) &&
                 value >= -90 &&
                 value <= 90
             ) {
@@ -181,21 +193,16 @@ export default async function handler(
             }
         }
 
-
         if (
-            longitude !==
-            undefined &&
-            longitude !==
-            null &&
+            longitude !== undefined &&
+            longitude !== null &&
             String(longitude).trim()
         ) {
             const value =
                 Number(longitude);
 
             if (
-                Number.isFinite(
-                    value
-                ) &&
+                Number.isFinite(value) &&
                 value >= -180 &&
                 value <= 180
             ) {
@@ -204,7 +211,6 @@ export default async function handler(
             }
         }
 
-
         /* =====================================================
            CREATE SUBMISSION
         ====================================================== */
@@ -212,60 +218,59 @@ export default async function handler(
         const {
             data,
             error,
-        } =
-            await supabaseAdmin
-                .from(
-                    "nt_spot_submissions"
-                )
-                .insert({
-                    visitor_id:
-                        visitorId ||
-                        null,
+        } = await supabaseAdmin
+            .from(
+                "nt_spot_submissions"
+            )
+            .insert({
+                visitor_id:
+                    cleanVisitorId,
 
-                    name:
-                        cleanName,
+                name:
+                    cleanName,
 
-                    category:
-                        cleanCategory,
+                category:
+                    cleanCategory,
 
-                    description:
-                        cleanDescription,
+                description:
+                    cleanDescription,
 
-                    address:
-                        cleanAddress,
+                address:
+                    cleanAddress,
 
-                    neighborhood:
-                        cleanNeighborhood,
+                neighborhood:
+                    cleanNeighborhood,
 
-                    city:
-                        cleanCity,
+                city:
+                    cleanCity,
 
-                    latitude:
-                        cleanLatitude,
+                latitude:
+                    cleanLatitude,
 
-                    longitude:
-                        cleanLongitude,
+                longitude:
+                    cleanLongitude,
 
-                    phone:
-                        cleanPhone,
+                phone:
+                    cleanPhone,
 
-                    whatsapp:
-                        cleanWhatsapp,
+                whatsapp:
+                    cleanWhatsapp,
 
-                    price_information:
-                        cleanPriceInformation,
+                price_information:
+                    cleanPriceInformation,
 
-                    opening_hours:
-                        cleanOpeningHours,
+                opening_hours:
+                    cleanOpeningHours,
 
-                    status:
-                        "PENDING",
-                })
-                .select(
-                    "id"
-                )
-                .single();
+                status:
+                    "PENDING",
+            })
+            .select("id")
+            .single();
 
+        /* =====================================================
+           DATABASE ERROR
+        ====================================================== */
 
         if (error) {
             console.error(
@@ -277,32 +282,20 @@ export default async function handler(
                 error:
                     error.message ||
                     "Unable to submit the spot.",
-
-                details:
-                    error.details ||
-                    null,
-
-                hint:
-                    error.hint ||
-                    null,
-
-                code:
-                    error.code ||
-                    null,
             });
         }
 
+        /* =====================================================
+           SUCCESS
+        ====================================================== */
 
         return res.status(201).json({
-            success:
-                true,
+            success: true,
 
             submissionId:
                 data.id,
         });
-    } catch (
-    error
-    ) {
+    } catch (error) {
         console.error(
             "Spot submission API:",
             error
@@ -310,6 +303,7 @@ export default async function handler(
 
         return res.status(500).json({
             error:
+                error.message ||
                 "Unable to submit the spot.",
         });
     }
