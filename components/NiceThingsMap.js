@@ -26,66 +26,60 @@ import {
 } from "lucide-react";
 
 /* =========================================================
-   PLACE MARKER
+   MARKERS
 ========================================================= */
 
-const defaultIcon =
-    L.icon({
-        iconUrl:
-            "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+const defaultIcon = L.icon({
+    iconUrl:
+        "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
 
-        iconRetinaUrl:
-            "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+    iconRetinaUrl:
+        "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
 
-        shadowUrl:
-            "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+    shadowUrl:
+        "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 
-        iconSize: [
-            25,
-            41,
-        ],
+    iconSize: [
+        25,
+        41,
+    ],
 
-        iconAnchor: [
-            12,
-            41,
-        ],
+    iconAnchor: [
+        12,
+        41,
+    ],
 
-        popupAnchor: [
-            1,
-            -34,
-        ],
+    popupAnchor: [
+        1,
+        -34,
+    ],
 
-        shadowSize: [
-            41,
-            41,
-        ],
-    });
+    shadowSize: [
+        41,
+        41,
+    ],
+});
 
-/* =========================================================
-   USER LOCATION ICON
-========================================================= */
+const userIcon = L.divIcon({
+    className:
+        "nicethings-user-location-marker",
 
-const userIcon =
-    L.divIcon({
-        className:
-            "nicethings-user-location-marker",
+    html: `
+        <div class="nicethings-user-location-dot">
+            <div class="nicethings-user-location-pulse"></div>
+        </div>
+    `,
 
-        html: `
-            <div class="nicethings-user-location-dot">
-                <div class="nicethings-user-location-pulse"></div>
-            </div>
-        `,
+    iconSize: [
+        28,
+        28,
+    ],
 
-        iconSize: [
-            28,
-            28,
-        ],
-
-        iconAnchor: [
-            14,
-            14,
-        ],
-    });
+    iconAnchor: [
+        14,
+        14,
+    ],
+});
 
 /* =========================================================
    VALID COORDINATES
@@ -102,19 +96,15 @@ function isValidCoordinates(
         Number.isFinite(
             Number(longitude)
         ) &&
-        Number(latitude) >=
-        -90 &&
-        Number(latitude) <=
-        90 &&
-        Number(longitude) >=
-        -180 &&
-        Number(longitude) <=
-        180
+        Number(latitude) >= -90 &&
+        Number(latitude) <= 90 &&
+        Number(longitude) >= -180 &&
+        Number(longitude) <= 180
     );
 }
 
 /* =========================================================
-   DISTANCE DISPLAY
+   FORMAT DISTANCE
 ========================================================= */
 
 function formatDistance(
@@ -148,7 +138,7 @@ function formatDistance(
 }
 
 /* =========================================================
-   TIME DISPLAY
+   FORMAT TIME
 ========================================================= */
 
 function formatDuration(
@@ -169,8 +159,11 @@ function formatDuration(
     }
 
     const rounded =
-        Math.round(
-            value
+        Math.max(
+            1,
+            Math.round(
+                value
+            )
         );
 
     if (
@@ -226,7 +219,6 @@ function MapController({
                     Number(
                         userLocation.latitude
                     ),
-
                     Number(
                         userLocation.longitude
                     ),
@@ -245,7 +237,6 @@ function MapController({
                             Number(
                                 spot.latitude
                             ),
-
                             Number(
                                 spot.longitude
                             ),
@@ -260,14 +251,24 @@ function MapController({
             spots,
         ]);
 
-    /* -------------------------------------------------------
+    /* =====================================================
        FOLLOW USER
-    ------------------------------------------------------- */
+
+       IMPORTANT:
+       When a route is visible, we DO NOT
+       recenter the map on the user.
+
+       Otherwise the route-fit operation gets
+       immediately overridden and the route can
+       appear to be missing/off-screen.
+    ====================================================== */
 
     useEffect(() => {
         if (
             !followUser ||
-            !userLocation
+            !userLocation ||
+            routeCoordinates?.length >
+            1
         ) {
             return;
         }
@@ -291,11 +292,6 @@ function MapController({
             return;
         }
 
-        /*
-         * Keep the map centered on the
-         * moving user.
-         */
-
         map.setView(
             [
                 latitude,
@@ -314,11 +310,17 @@ function MapController({
         map,
         userLocation,
         followUser,
+        routeCoordinates,
     ]);
 
-    /* -------------------------------------------------------
-       ROUTE FITTING
-    ------------------------------------------------------- */
+    /* =====================================================
+       FIT ENTIRE ROUTE
+
+       This is the important part.
+
+       We show the complete road route from
+       the user to the selected place.
+    ====================================================== */
 
     useEffect(() => {
         if (
@@ -329,38 +331,62 @@ function MapController({
             return;
         }
 
-        /*
-         * When a route is created,
-         * show the entire route.
-         */
-
         const bounds =
             L.latLngBounds(
                 routeCoordinates
             );
 
-        map.fitBounds(
-            bounds,
-            {
-                padding: [
-                    70,
-                    70,
-                ],
+        /*
+         * Make sure Leaflet knows the container
+         * has its correct dimensions.
+         */
 
-                maxZoom: 17,
-
-                animate:
-                    true,
-            }
+        map.invalidateSize(
+            false
         );
+
+        /*
+         * Small delay allows the map to finish
+         * rendering before fitting the route.
+         */
+
+        const timer =
+            setTimeout(() => {
+                map.fitBounds(
+                    bounds,
+                    {
+                        paddingTopLeft: [
+                            50,
+                            110,
+                        ],
+
+                        paddingBottomRight: [
+                            50,
+                            70,
+                        ],
+
+                        maxZoom: 17,
+
+                        animate:
+                            true,
+                    }
+                );
+            }, 100);
+
+        return () =>
+            clearTimeout(
+                timer
+            );
     }, [
         map,
         routeCoordinates,
     ]);
 
-    /* -------------------------------------------------------
+    /* =====================================================
        NORMAL MAP FIT
-    ------------------------------------------------------- */
+
+       Only used when there is NO route.
+    ====================================================== */
 
     useEffect(() => {
         if (
@@ -460,7 +486,7 @@ export default function NiceThingsMap({
     ];
 
     /* =====================================================
-       CALCULATE ROUTE
+       CALCULATE ROAD ROUTE
     ====================================================== */
 
     async function calculateRoute(
@@ -526,13 +552,12 @@ export default function NiceThingsMap({
             ""
         );
 
-        setRouteCoordinates(
-            []
-        );
-
-        setRouteInfo(
-            null
-        );
+        /*
+         * Don't immediately clear the existing
+         * route during a GPS refresh.
+         *
+         * This prevents visual flickering.
+         */
 
         try {
             const params =
@@ -560,7 +585,14 @@ export default function NiceThingsMap({
 
             const response =
                 await fetch(
-                    `/api/route?${params.toString()}`
+                    `/api/route?${params.toString()}`,
+                    {
+                        method:
+                            "GET",
+
+                        cache:
+                            "no-store",
+                    }
                 );
 
             const data =
@@ -570,36 +602,68 @@ export default function NiceThingsMap({
                 !response.ok ||
                 !data?.success ||
                 !data?.geometry
-                    ?.coordinates
+                    ?.coordinates ||
+                data.geometry.coordinates
+                    .length <
+                2
             ) {
                 throw new Error(
                     data?.error ||
-                    "Unable to calculate route."
+                    "No road route was found."
                 );
             }
 
             /*
-             * GeoJSON uses:
+             * OSRM / GeoJSON:
              *
              * [longitude, latitude]
              *
-             * Leaflet requires:
+             * Leaflet:
              *
              * [latitude, longitude]
              */
 
             const coordinates =
-                data.geometry.coordinates.map(
-                    coordinate => [
-                        Number(
-                            coordinate[1]
-                        ),
+                data.geometry.coordinates
+                    .map(
+                        coordinate => {
+                            const longitude =
+                                Number(
+                                    coordinate[0]
+                                );
 
-                        Number(
-                            coordinate[0]
-                        ),
-                    ]
+                            const latitude =
+                                Number(
+                                    coordinate[1]
+                                );
+
+                            if (
+                                !isValidCoordinates(
+                                    latitude,
+                                    longitude
+                                )
+                            ) {
+                                return null;
+                            }
+
+                            return [
+                                latitude,
+                                longitude,
+                            ];
+                        }
+                    )
+                    .filter(
+                        Boolean
+                    );
+
+            if (
+                coordinates.length <
+                2
+            ) {
+                throw new Error(
+                    "The routing service returned an invalid route."
                 );
+            }
 
             setRouteCoordinates(
                 coordinates
@@ -607,16 +671,24 @@ export default function NiceThingsMap({
 
             setRouteInfo({
                 distanceKm:
-                    data.distanceKm,
+                    Number(
+                        data.distanceKm
+                    ),
 
                 distanceMeters:
-                    data.distanceMeters,
+                    Number(
+                        data.distanceMeters
+                    ),
 
                 durationMinutes:
-                    data.durationMinutes,
+                    Number(
+                        data.durationMinutes
+                    ),
 
                 durationSeconds:
-                    data.durationSeconds,
+                    Number(
+                        data.durationSeconds
+                    ),
             });
         } catch (
         error
@@ -660,8 +732,89 @@ export default function NiceThingsMap({
     }
 
     /* =====================================================
-       RE-CALCULATE ROUTE WHEN USER MOVES
+       GPS ROUTE REFRESH
+
+       Only refresh after the user has moved
+       enough to make the old route stale.
+
+       We don't route on every tiny GPS update.
     ====================================================== */
+
+    const [
+        lastRoutedLocation,
+        setLastRoutedLocation,
+    ] = useState(null);
+
+    function calculateStraightDistanceKm(
+        lat1,
+        lng1,
+        lat2,
+        lng2
+    ) {
+        const earthRadius =
+            6371;
+
+        const dLat =
+            (
+                Number(
+                    lat2
+                ) -
+                Number(
+                    lat1
+                )
+            ) *
+            Math.PI /
+            180;
+
+        const dLng =
+            (
+                Number(
+                    lng2
+                ) -
+                Number(
+                    lng1
+                )
+            ) *
+            Math.PI /
+            180;
+
+        const a =
+            Math.sin(
+                dLat / 2
+            ) **
+            2 +
+            Math.cos(
+                Number(
+                    lat1
+                ) *
+                Math.PI /
+                180
+            ) *
+            Math.cos(
+                Number(
+                    lat2
+                ) *
+                Math.PI /
+                180
+            ) *
+            Math.sin(
+                dLng / 2
+            ) **
+            2;
+
+        return (
+            earthRadius *
+            2 *
+            Math.atan2(
+                Math.sqrt(
+                    a
+                ),
+                Math.sqrt(
+                    1 - a
+                )
+            )
+        );
+    }
 
     useEffect(() => {
         if (
@@ -671,39 +824,91 @@ export default function NiceThingsMap({
             return;
         }
 
+        if (
+            !isValidCoordinates(
+                userLocation.latitude,
+                userLocation.longitude
+            )
+        ) {
+            return;
+        }
+
         /*
-         * We intentionally don't recalculate
-         * on every tiny GPS movement.
-         *
-         * This prevents excessive routing
-         * requests and gives the map smoother
-         * behavior.
+         * First location after route creation.
          */
 
-        const timeout =
+        if (
+            !lastRoutedLocation
+        ) {
+            setLastRoutedLocation({
+                latitude:
+                    Number(
+                        userLocation.latitude
+                    ),
+
+                longitude:
+                    Number(
+                        userLocation.longitude
+                    ),
+            });
+
+            return;
+        }
+
+        const movedKm =
+            calculateStraightDistanceKm(
+                lastRoutedLocation.latitude,
+                lastRoutedLocation.longitude,
+                userLocation.latitude,
+                userLocation.longitude
+            );
+
+        /*
+         * Recalculate only after approximately
+         * 50 metres of movement.
+         */
+
+        if (
+            movedKm <
+            0.05
+        ) {
+            return;
+        }
+
+        const timer =
             setTimeout(
-                () => {
-                    calculateRoute(
+                async () => {
+                    await calculateRoute(
                         selectedSpot
                     );
+
+                    setLastRoutedLocation({
+                        latitude:
+                            Number(
+                                userLocation.latitude
+                            ),
+
+                        longitude:
+                            Number(
+                                userLocation.longitude
+                            ),
+                    });
                 },
-                1500
+                800
             );
 
         return () =>
             clearTimeout(
-                timeout
+                timer
             );
 
-        /*
-         * We only react to the actual latitude
-         * and longitude changing.
-         */
-
+        // calculateRoute intentionally omitted
+        // because it is recreated on render.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         userLocation?.latitude,
         userLocation?.longitude,
+        selectedSpot?.id,
     ]);
 
     /* =====================================================
@@ -730,12 +935,6 @@ export default function NiceThingsMap({
             `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
                 destination
             )}`;
-
-        /*
-         * If we have the user's current
-         * position, explicitly provide it
-         * as the origin.
-         */
 
         if (
             userLocation &&
@@ -827,7 +1026,7 @@ export default function NiceThingsMap({
                 />
 
                 {/* =================================================
-                    USER LOCATION
+                    USER
                 ================================================== */}
 
                 {userLocation &&
@@ -840,13 +1039,15 @@ export default function NiceThingsMap({
                                 Number(
                                     userLocation.latitude
                                 ),
-
                                 Number(
                                     userLocation.longitude
                                 ),
                             ]}
                             icon={
                                 userIcon
+                            }
+                            zIndexOffset={
+                                1000
                             }
                         >
                             <Popup>
@@ -858,29 +1059,65 @@ export default function NiceThingsMap({
                     )}
 
                 {/* =================================================
-                    ROUTE
+                    ROUTE CASING
+
+                    Thick dark casing makes the road route
+                    visible even on bright map tiles.
                 ================================================== */}
 
                 {routeCoordinates.length >
                     1 && (
-                        <Polyline
-                            positions={
-                                routeCoordinates
-                            }
-                            pathOptions={{
-                                weight:
-                                    6,
+                        <>
+                            <Polyline
+                                positions={
+                                    routeCoordinates
+                                }
+                                pathOptions={{
+                                    color:
+                                        "#111827",
 
-                                opacity:
-                                    0.9,
+                                    weight:
+                                        11,
 
-                                lineCap:
-                                    "round",
+                                    opacity:
+                                        0.85,
 
-                                lineJoin:
-                                    "round",
-                            }}
-                        />
+                                    lineCap:
+                                        "round",
+
+                                    lineJoin:
+                                        "round",
+                                }}
+                                interactive={
+                                    false
+                                }
+                            />
+
+                            <Polyline
+                                positions={
+                                    routeCoordinates
+                                }
+                                pathOptions={{
+                                    color:
+                                        "#f97316",
+
+                                    weight:
+                                        7,
+
+                                    opacity:
+                                        1,
+
+                                    lineCap:
+                                        "round",
+
+                                    lineJoin:
+                                        "round",
+                                }}
+                                interactive={
+                                    false
+                                }
+                            />
+                        </>
                     )}
 
                 {/* =================================================
@@ -931,6 +1168,11 @@ export default function NiceThingsMap({
                                 ]}
                                 icon={
                                     defaultIcon
+                                }
+                                zIndexOffset={
+                                    isSelected
+                                        ? 1000
+                                        : 0
                                 }
                             >
                                 <Popup>
@@ -1138,6 +1380,7 @@ export default function NiceThingsMap({
                                                     style={{
                                                         verticalAlign:
                                                             "middle",
+
                                                         marginRight:
                                                             "4px",
                                                     }}
@@ -1168,7 +1411,7 @@ export default function NiceThingsMap({
                                                     }}
                                                 >
                                                     <strong>
-                                                        Route
+                                                        Road route
                                                     </strong>
 
                                                     <div>
@@ -1243,7 +1486,7 @@ export default function NiceThingsMap({
             </MapContainer>
 
             {/* =================================================
-                ROUTE INFORMATION PANEL
+                ROUTE INFORMATION
             ================================================== */}
 
             {selectedSpot && (
@@ -1268,7 +1511,7 @@ export default function NiceThingsMap({
                             "380px",
 
                         background:
-                            "rgba(255,255,255,0.96)",
+                            "rgba(255,255,255,0.97)",
 
                         backdropFilter:
                             "blur(12px)",
@@ -1329,12 +1572,13 @@ export default function NiceThingsMap({
                                     style={{
                                         verticalAlign:
                                             "middle",
+
                                         marginRight:
                                             "4px",
                                     }}
                                 />
 
-                                Route to
+                                Road route
                             </div>
 
                             <strong
@@ -1396,8 +1640,7 @@ export default function NiceThingsMap({
                                     "12px",
                             }}
                         >
-                            🛣️ Calculating the
-                            best road route...
+                            🛣️ Finding the best road route...
                         </div>
                     )}
 
@@ -1409,7 +1652,7 @@ export default function NiceThingsMap({
                                         "flex",
 
                                     gap:
-                                        "16px",
+                                        "20px",
 
                                     marginTop:
                                         "10px",
@@ -1449,6 +1692,7 @@ export default function NiceThingsMap({
                                             style={{
                                                 verticalAlign:
                                                     "middle",
+
                                                 marginRight:
                                                     "3px",
                                             }}
