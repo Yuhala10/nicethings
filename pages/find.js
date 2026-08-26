@@ -14,6 +14,7 @@ import {
 import AppShell from "../components/layout/AppShell";
 import { useLanguage } from "../lib/i18n";
 import { getCurrentLocation } from "../lib/location";
+import { initializeVisitor } from "../lib/visitor";
 import { NICE_THINGS } from "../lib/constants";
 
 
@@ -37,7 +38,7 @@ export default function FindPage() {
 
     /* =====================================================
        LOCATION
-       
+
        GPS IS NOW THE ONLY LOCATION METHOD.
     ====================================================== */
 
@@ -134,38 +135,51 @@ export default function FindPage() {
 
 
     /* =====================================================
-       CREATE VISITOR ID
+       INITIALIZE DATABASE-BACKED VISITOR SESSION
     ====================================================== */
 
     useEffect(() => {
-        let id =
-            localStorage.getItem(
-                "nicethings_visitor_id"
+        let cancelled = false;
+
+        async function initVisitor() {
+            const id =
+                await initializeVisitor(
+                    language
+                );
+
+            if (cancelled) {
+                return;
+            }
+
+            if (!id) {
+                setVisitorId(
+                    ""
+                );
+
+                setError(
+                    language === "fr"
+                        ? "Impossible d'initialiser votre session. Veuillez réessayer."
+                        : "Unable to initialize your visitor session. Please try again."
+                );
+
+                return;
+            }
+
+            setVisitorId(
+                id
             );
 
-
-        if (!id) {
-            id =
-                typeof crypto !==
-                    "undefined" &&
-                    crypto.randomUUID
-                    ? crypto.randomUUID()
-                    : `visitor_${Date.now()}_${Math.random()
-                        .toString(36)
-                        .slice(2)}`;
-
-
-            localStorage.setItem(
-                "nicethings_visitor_id",
-                id
+            setError(
+                ""
             );
         }
 
+        initVisitor();
 
-        setVisitorId(
-            id
-        );
-    }, []);
+        return () => {
+            cancelled = true;
+        };
+    }, [language]);
 
 
     /* =====================================================
@@ -232,29 +246,20 @@ export default function FindPage() {
 
 
             /* =============================================
-               ACCURACY CHECK
-            ============================================== */
-
-            if (
-                Number.isFinite(
-                    accuracy
-                ) &&
-                accuracy > 150
-            ) {
-                throw new Error(
-                    language === "fr"
-                        ? `Votre précision GPS est actuellement d'environ ${Math.round(
-                            accuracy
-                        )} mètres. Attendez un meilleur signal et réessayez.`
-                        : `Your GPS accuracy is currently about ${Math.round(
-                            accuracy
-                        )} metres. Please wait for a better GPS signal and try again.`
-                );
-            }
-
-
-            /* =============================================
                SAVE GPS
+
+               IMPORTANT:
+               The Find page may use an approximate GPS fix.
+               A 500 m browser accuracy reading is still a
+               real geographic position and must not make the
+               user completely unable to search.
+
+               The actual accuracy is preserved and sent
+               with the search.
+
+               The stricter accuracy rule remains appropriate
+               for Spot registration, where the submitted GPS
+               becomes the Spot's official coordinates.
             ============================================== */
 
             setCoordinates({
@@ -414,12 +419,14 @@ export default function FindPage() {
                 )
         );
     }
+
+
     /* =====================================================
-      SEARCH
-      
-      GPS IS REQUIRED.
-      MANUAL AREA SEARCH IS REMOVED.
-   ====================================================== */
+       SEARCH
+
+       GPS IS REQUIRED.
+       MANUAL AREA SEARCH IS REMOVED.
+    ====================================================== */
 
     async function handleSearch(
         event
@@ -517,7 +524,6 @@ export default function FindPage() {
                             JSON.stringify({
                                 visitorId,
 
-
                                 /* =================================
                                    AUTHORITATIVE USER GPS
                                 ================================== */
@@ -532,35 +538,30 @@ export default function FindPage() {
                                         coordinates.longitude
                                     ),
 
-
                                 /*
                                  * We intentionally do NOT send a
                                  * manually typed area.
                                  *
                                  * The backend uses GPS as the
                                  * geographic source of truth.
-                                 */
+                                */
 
                                 locationText:
                                     t(
                                         "currentLocation"
                                     ),
 
-
                                 budget:
                                     finalBudget,
-
 
                                 people:
                                     Number(
                                         people
                                     ),
 
-
                                 category:
                                     category ||
                                     null,
-
 
                                 language,
                             }),
@@ -575,7 +576,6 @@ export default function FindPage() {
             try {
                 data =
                     await response.json();
-
             } catch {
                 data =
                     {};
@@ -648,46 +648,32 @@ export default function FindPage() {
                         data.searchId ||
                         null,
 
-
                     results:
                         data.results ||
                         [],
-
 
                     alternatives:
                         data.alternatives ||
                         [],
 
-
                     accessExpiresAt:
                         data.accessExpiresAt ||
                         null,
-
 
                     launchFree:
                         Boolean(
                             data.launchFree
                         ),
 
-
                     admin:
                         Boolean(
                             data.admin
                         ),
 
-
-                    /*
-                     * This is a UI label only.
-                     *
-                     * The actual geographic position is
-                     * stored separately below.
-                     */
-
                     locationText:
                         t(
                             "currentLocation"
                         ),
-
 
                     /* =================================
                        USER GPS
@@ -703,7 +689,6 @@ export default function FindPage() {
                             coordinates.longitude
                         ),
 
-
                     accuracy:
                         Number.isFinite(
                             Number(
@@ -715,21 +700,17 @@ export default function FindPage() {
                             )
                             : null,
 
-
                     budget:
                         finalBudget,
-
 
                     people:
                         Number(
                             people
                         ),
 
-
                     category:
                         category ||
                         null,
-
 
                     language,
                 })
@@ -809,7 +790,28 @@ export default function FindPage() {
             ? item.fr
             : item.en;
     }
+    function getCategoryIcon(
+        categoryItem
+    ) {
+        if (!categoryItem) {
+            return "📍";
+        }
 
+        return (
+            categoryItem.icon ||
+            "📍"
+        );
+    }
+
+    function formatBudget(value) {
+        const number = Number(value);
+
+        if (!Number.isFinite(number)) {
+            return "";
+        }
+
+        return number.toLocaleString("fr-FR");
+    }
 
     const selectedCategory =
         getSelectedCategory();
@@ -817,1185 +819,698 @@ export default function FindPage() {
 
     const finalBudget =
         getFinalBudget();
+
+
+    /* =====================================================
+       RENDER
+    ====================================================== */
+
     return (
         <AppShell>
 
-            <main className="nt-discovery">
+            <main
+                className="nt-find-page"
+            >
 
-                <div className="nt-discovery-shell">
+                {/* =================================================
+                    HEADER
+                ================================================= */}
 
-                    {/* =================================================
-                        TOP BAR
-                    ================================================== */}
+                <header
+                    className="nt-page-header"
+                >
 
                     <div
-                        style={{
-                            display:
-                                "flex",
-
-                            alignItems:
-                                "center",
-
-                            justifyContent:
-                                "space-between",
-
-                            gap:
-                                "12px",
-
-                            marginBottom:
-                                "20px",
-                        }}
+                        className="nt-page-header-left"
                     >
 
                         <button
                             type="button"
+                            className="nt-icon-button"
                             onClick={() =>
                                 window.history.back()
                             }
-                            className="nt-button-secondary"
-                            style={{
-                                minHeight:
-                                    "42px",
-
-                                padding:
-                                    "8px 13px",
-                            }}
+                            aria-label={
+                                language ===
+                                    "fr"
+                                    ? "Retour"
+                                    : "Back"
+                            }
                         >
-
                             <ArrowLeft
-                                size={
-                                    17
-                                }
+                                size={20}
                             />
-
-                            <span>
-                                {t(
-                                    "back"
-                                )}
-                            </span>
-
                         </button>
 
 
-                        <div
-                            className="nt-language-switch"
-                            aria-label={
-                                t(
-                                    "language"
+                        <div>
+
+                            <h1>
+                                {t(
+                                    "findTitle"
+                                )}
+                            </h1>
+
+                            <p>
+                                {t(
+                                    "findSubtitle"
+                                )}
+                            </p>
+
+                        </div>
+
+                    </div>
+
+
+                    <div
+                        className="nt-language-switcher"
+                    >
+
+                        <button
+                            type="button"
+                            className={
+                                language ===
+                                    "en"
+                                    ? "active"
+                                    : ""
+                            }
+                            onClick={() =>
+                                changeLanguage(
+                                    "en"
                                 )
                             }
                         >
-
-                            <button
-                                type="button"
-                                className={
-                                    language ===
-                                        "en"
-                                        ? "active"
-                                        : ""
-                                }
-                                onClick={() =>
-                                    setLanguage(
-                                        "en"
-                                    )
-                                }
-                            >
-                                EN
-                            </button>
+                            EN
+                        </button>
 
 
-                            <button
-                                type="button"
-                                className={
-                                    language ===
-                                        "fr"
-                                        ? "active"
-                                        : ""
-                                }
-                                onClick={() =>
-                                    setLanguage(
-                                        "fr"
-                                    )
-                                }
-                            >
-                                FR
-                            </button>
-
-                        </div>
+                        <button
+                            type="button"
+                            className={
+                                language ===
+                                    "fr"
+                                    ? "active"
+                                    : ""
+                            }
+                            onClick={() =>
+                                changeLanguage(
+                                    "fr"
+                                )
+                            }
+                        >
+                            FR
+                        </button>
 
                     </div>
 
-
-                    {/* =================================================
-                        HEADER
-                    ================================================== */}
-
-                    <header
-                        className="nt-discovery-header"
-                    >
-
-                        <div
-                            className="nt-hero-badge"
-                        >
-
-                            <Sparkles
-                                size={
-                                    14
-                                }
-                            />
-
-                            {t(
-                                "discover"
-                            )}
-
-                        </div>
+                </header>
 
 
-                        <h1>
-                            {t(
-                                "findPageTitle"
-                            )}
-                        </h1>
+                {/* =================================================
+                    LOCATION
+                ================================================= */}
 
-
-                        <p>
-                            {t(
-                                "findPageDescription"
-                            )}
-                        </p>
-
-                    </header>
-
-
-                    {/* =================================================
-                        PROGRESS
-                    ================================================== */}
+                <section
+                    className="nt-location-card"
+                >
 
                     <div
-                        className="nt-search-progress"
-                        aria-hidden="true"
+                        className="nt-section-heading"
                     >
 
                         <div
-                            className={
-                                hasLocation
-                                    ? "nt-search-progress-step completed"
-                                    : "nt-search-progress-step active"
-                            }
-                        />
+                            className="nt-section-icon"
+                        >
+                            <LocateFixed
+                                size={21}
+                            />
+                        </div>
 
 
-                        <div
-                            className={
-                                finalBudget
-                                    ? "nt-search-progress-step active"
-                                    : "nt-search-progress-step"
-                            }
-                        />
+                        <div>
 
+                            <h2>
+                                {language ===
+                                    "fr"
+                                    ? "Votre position"
+                                    : "Your location"}
+                            </h2>
 
-                        <div
-                            className={
-                                people
-                                    ? "nt-search-progress-step active"
-                                    : "nt-search-progress-step"
-                            }
-                        />
+                            <p>
+                                {language ===
+                                    "fr"
+                                    ? "Nous utilisons votre position réelle pour trouver les endroits près de vous."
+                                    : "We use your real location to find places near you."}
+                            </p>
 
-
-                        <div
-                            className={
-                                category
-                                    ? "nt-search-progress-step completed"
-                                    : "nt-search-progress-step"
-                            }
-                        />
+                        </div>
 
                     </div>
 
 
-                    {/* =================================================
-                        FORM
-                    ================================================== */}
+                    {/* -------------------------------------------------
+                        CURRENT LOCATION BUTTON
+                    ------------------------------------------------- */}
 
-                    <form
-                        onSubmit={
-                            handleSearch
+                    <button
+                        type="button"
+                        className={
+                            hasLocation
+                                ? "nt-location-button active"
+                                : "nt-location-button"
                         }
-                        className="nt-discovery-card"
+                        onClick={
+                            useMyLocation
+                        }
+                        disabled={
+                            loadingLocation
+                        }
                     >
 
-                        {/* =================================================
-                            STEP 1 — CURRENT LOCATION
-                        ================================================== */}
-
-                        <section
-                            className="nt-discovery-step"
-                        >
-
-                            <div
-                                className="nt-discovery-step-header"
-                            >
-
-                                <div
-                                    className="nt-discovery-step-number"
-                                >
-                                    1
-                                </div>
-
-
-                                <div>
-
-                                    <h2>
-                                        {language ===
-                                            "fr"
-                                            ? "Où êtes-vous ?"
-                                            : "Where are you?"}
-                                    </h2>
-
-
-                                    <p>
-                                        {language ===
-                                            "fr"
-                                            ? "Nous utilisons votre position actuelle pour trouver les endroits près de vous."
-                                            : "We use your current location to find places near you."}
-                                    </p>
-
-                                </div>
-
-                            </div>
-
-
-                            {/* =================================================
-                                GPS LOCATION CARD
-                            ================================================== */}
-
-                            <div
-                                className="nt-location-panel"
-                            >
-
-                                <div
-                                    className="nt-location-panel-header"
-                                >
-
-                                    <div
-                                        className="nt-location-panel-icon"
-                                    >
-
-                                        {hasLocation ? (
-                                            <Navigation
-                                                size={
-                                                    20
-                                                }
-                                            />
-                                        ) : (
-                                            <MapPin
-                                                size={
-                                                    20
-                                                }
-                                            />
-                                        )}
-
-                                    </div>
-
-
-                                    <div>
-
-                                        <strong>
-                                            {hasLocation
-                                                ? language ===
-                                                    "fr"
-                                                    ? "Position actuelle capturée"
-                                                    : "Current location captured"
-                                                : language ===
-                                                    "fr"
-                                                    ? "Votre position actuelle"
-                                                    : "Your current location"}
-                                        </strong>
-
-
-                                        <span>
-                                            {hasLocation
-                                                ? language ===
-                                                    "fr"
-                                                    ? "Cette position sera utilisée pour calculer les distances."
-                                                    : "This position will be used to calculate distances."
-                                                : language ===
-                                                    "fr"
-                                                    ? "Vous devez autoriser l'accès à votre position."
-                                                    : "You must allow access to your current location."}
-                                        </span>
-
-                                    </div>
-
-                                </div>
-
-
-                                {/* =================================================
-                                    CURRENT LOCATION BUTTON
-                                ================================================== */}
-
-                                <button
-                                    type="button"
-                                    onClick={
-                                        useMyLocation
-                                    }
-                                    disabled={
-                                        loadingLocation ||
-                                        searching
-                                    }
-                                    className={
-                                        hasLocation
-                                            ? "nt-location-option active"
-                                            : "nt-location-option"
-                                    }
-                                >
-
-                                    {loadingLocation ? (
-                                        <>
-
-                                            <span
-                                                className="nt-loading-spinner"
-                                                style={{
-                                                    width:
-                                                        "18px",
-
-                                                    height:
-                                                        "18px",
-
-                                                    borderWidth:
-                                                        "2px",
-                                                }}
-                                            />
-
-                                            <span>
-                                                {language ===
-                                                    "fr"
-                                                    ? "Localisation en cours..."
-                                                    : "Getting your location..."}
-                                            </span>
-
-                                        </>
-                                    ) : (
-                                        <>
-
-                                            <LocateFixed
-                                                size={
-                                                    19
-                                                }
-                                            />
-
-                                            <span>
-                                                {hasLocation
-                                                    ? language ===
-                                                        "fr"
-                                                        ? "Actualiser ma position"
-                                                        : "Update My Current Location"
-                                                    : language ===
-                                                        "fr"
-                                                        ? "Utiliser ma position actuelle"
-                                                        : "Use My Current Location"}
-                                            </span>
-
-                                        </>
-                                    )}
-
-                                </button>
-
-
-                                {/* =================================================
-                                    CAPTURED GPS DETAILS
-                                ================================================== */}
-
-                                {hasLocation && (
-                                    <div
-                                        style={{
-                                            marginTop:
-                                                "12px",
-
-                                            padding:
-                                                "12px",
-
-                                            borderRadius:
-                                                "10px",
-
-                                            background:
-                                                "#f0fdf4",
-
-                                            border:
-                                                "1px solid #bbf7d0",
-                                        }}
-                                    >
-
-                                        <div
-                                            style={{
-                                                display:
-                                                    "grid",
-
-                                                gridTemplateColumns:
-                                                    "1fr 1fr",
-
-                                                gap:
-                                                    "8px",
-                                            }}
-                                        >
-
-                                            <div>
-
-                                                <div
-                                                    style={{
-                                                        fontSize:
-                                                            "0.68rem",
-
-                                                        color:
-                                                            "#6b7280",
-
-                                                        fontWeight:
-                                                            700,
-
-                                                        textTransform:
-                                                            "uppercase",
-                                                    }}
-                                                >
-                                                    Latitude
-                                                </div>
-
-
-                                                <strong
-                                                    style={{
-                                                        display:
-                                                            "block",
-
-                                                        marginTop:
-                                                            "3px",
-
-                                                        fontSize:
-                                                            "0.78rem",
-
-                                                        wordBreak:
-                                                            "break-all",
-                                                    }}
-                                                >
-                                                    {Number(
-                                                        coordinates.latitude
-                                                    ).toFixed(
-                                                        6
-                                                    )}
-                                                </strong>
-
-                                            </div>
-
-
-                                            <div>
-
-                                                <div
-                                                    style={{
-                                                        fontSize:
-                                                            "0.68rem",
-
-                                                        color:
-                                                            "#6b7280",
-
-                                                        fontWeight:
-                                                            700,
-
-                                                        textTransform:
-                                                            "uppercase",
-                                                    }}
-                                                >
-                                                    Longitude
-                                                </div>
-
-
-                                                <strong
-                                                    style={{
-                                                        display:
-                                                            "block",
-
-                                                        marginTop:
-                                                            "3px",
-
-                                                        fontSize:
-                                                            "0.78rem",
-
-                                                        wordBreak:
-                                                            "break-all",
-                                                    }}
-                                                >
-                                                    {Number(
-                                                        coordinates.longitude
-                                                    ).toFixed(
-                                                        6
-                                                    )}
-                                                </strong>
-
-                                            </div>
-
-
-                                            <div
-                                                style={{
-                                                    gridColumn:
-                                                        "1 / -1",
-                                                }}
-                                            >
-
-                                                <div
-                                                    style={{
-                                                        fontSize:
-                                                            "0.68rem",
-
-                                                        color:
-                                                            "#6b7280",
-
-                                                        fontWeight:
-                                                            700,
-
-                                                        textTransform:
-                                                            "uppercase",
-                                                    }}
-                                                >
-                                                    GPS Accuracy
-                                                </div>
-
-
-                                                <strong
-                                                    style={{
-                                                        display:
-                                                            "block",
-
-                                                        marginTop:
-                                                            "3px",
-
-                                                        fontSize:
-                                                            "0.82rem",
-
-                                                        color:
-                                                            "#16803C",
-                                                    }}
-                                                >
-                                                    {Number.isFinite(
-                                                        Number(
-                                                            coordinates.accuracy
-                                                        )
-                                                    )
-                                                        ? `±${Math.round(
-                                                            Number(
-                                                                coordinates.accuracy
-                                                            )
-                                                        )} metres`
-                                                        : language ===
-                                                            "fr"
-                                                            ? "Position GPS valide"
-                                                            : "Valid GPS position"}
-                                                </strong>
-
-                                            </div>
-
-                                        </div>
-
-                                    </div>
-                                )}
-
-
-                                {/* =================================================
-                                    GPS ERROR
-                                ================================================== */}
-
-                                {locationError && (
-                                    <div
-                                        role="alert"
-                                        style={{
-                                            marginTop:
-                                                "10px",
-
-                                            padding:
-                                                "10px 12px",
-
-                                            borderRadius:
-                                                "10px",
-
-                                            background:
-                                                "#fef2f2",
-
-                                            color:
-                                                "#991b1b",
-
-                                            fontSize:
-                                                "0.78rem",
-
-                                            lineHeight:
-                                                1.45,
-                                        }}
-                                    >
-
-                                        {error ||
-                                            (
-                                                language ===
-                                                    "fr"
-                                                    ? "Impossible d'obtenir votre position actuelle."
-                                                    : "Unable to get your current location."
-                                            )}
-
-                                    </div>
-                                )}
-
-
-                                {/* =================================================
-                                    NO MANUAL LOCATION
-                                ================================================== */}
-
-                                {!hasLocation &&
-                                    !loadingLocation && (
-                                        <p
-                                            style={{
-                                                margin:
-                                                    "12px 0 0",
-
-                                                fontSize:
-                                                    "0.76rem",
-
-                                                lineHeight:
-                                                    1.45,
-
-                                                color:
-                                                    "var(--nt-muted)",
-                                            }}
-                                        >
-                                            <MapPin
-                                                size={
-                                                    14
-                                                }
-                                                style={{
-                                                    verticalAlign:
-                                                        "middle",
-
-                                                    marginRight:
-                                                        "4px",
-                                                }}
-                                            />
-
-                                            {language ===
-                                                "fr"
-                                                ? "La saisie manuelle d'un quartier n'est plus utilisée. Votre position GPS réelle est nécessaire pour une correspondance précise."
-                                                : "Manual area entry is not used. Your real GPS position is required for accurate matching."}
-                                        </p>
-                                    )}
-
-                            </div>
-
-                        </section>
-
-
-                        {/* =================================================
-                            STEP 2 — BUDGET
-                        ================================================== */}
-
-                        <section
-                            className="nt-discovery-step"
-                        >
-
-                            <div
-                                className="nt-discovery-step-header"
-                            >
-
-                                <div
-                                    className="nt-discovery-step-number"
-                                >
-                                    2
-                                </div>
-
-
-                                <div>
-
-                                    <h2>
-                                        {t(
-                                            "budgetTitle"
-                                        )}
-                                    </h2>
-
-
-                                    <p>
-                                        {t(
-                                            "budgetHelp"
-                                        )}
-                                    </p>
-
-                                </div>
-
-                            </div>
-
-
-                            <div
-                                className="nt-budget-grid"
-                            >
-
-                                {budgets.map(
-                                    value => (
-                                        <button
-                                            key={value}
-                                            type="button"
-                                            onClick={() => {
-                                                setBudget(value);
-                                                setCustomBudget("");
-                                                setError("");
-                                            }}
-                                            className={
-                                                Number(budget) === Number(value) && !customBudget
-                                                    ? "nt-budget-option selected"
-                                                    : "nt-budget-option"
-                                            }
-                                        >
-                                            <span className="nt-budget-price">
-                                                <strong>
-                                                    {Number(value).toLocaleString("fr-FR")}
-                                                </strong>
-
-                                                <span>FCFA</span>
-                                            </span>
-                                        </button>
-                                    )
-                                )}
-
-                            </div>
-
-
-                            <div
-                                style={{
-                                    marginTop:
-                                        "12px",
-                                }}
-                            >
-
-                                <label>
-                                    {language ===
-                                        "fr"
-                                        ? "Autre budget"
-                                        : "Other budget"}
-                                </label>
-
-
-                                <input
-                                    type="number"
-                                    min="1"
-                                    value={
-                                        customBudget
-                                    }
-                                    onChange={event =>
-                                        setCustomBudget(
-                                            event
-                                                .target
-                                                .value
-                                        )
-                                    }
-                                    placeholder={
-                                        language ===
-                                            "fr"
-                                            ? "Entrez votre budget"
-                                            : "Enter your budget"
-                                    }
-                                />
-
-                            </div>
-
-                        </section>
-
-
-                        {/* =================================================
-                            STEP 3 — PEOPLE
-                        ================================================== */}
-
-                        <section
-                            className="nt-discovery-step"
-                        >
-
-                            <div
-                                className="nt-discovery-step-header"
-                            >
-
-                                <div
-                                    className="nt-discovery-step-number"
-                                >
-                                    3
-                                </div>
-
-
-                                <div>
-
-                                    <h2>
-                                        {t(
-                                            "peopleTitle"
-                                        )}
-                                    </h2>
-
-
-                                    <p>
-                                        {t(
-                                            "peopleHelp"
-                                        )}
-                                    </p>
-
-                                </div>
-
-                            </div>
-
-
-                            <div
-                                className="nt-people-selector"
-                            >
-
-                                <button
-                                    type="button"
-                                    onClick={
-                                        decreasePeople
-                                    }
-                                    disabled={
-                                        Number(
-                                            people
-                                        ) <=
-                                        Math.min(
-                                            ...peopleOptions
-                                        )
-                                    }
-                                    aria-label={
-                                        language ===
-                                            "fr"
-                                            ? "Réduire le nombre de personnes"
-                                            : "Decrease people"
-                                    }
-                                >
-                                    −
-                                </button>
-
-
-                                <div>
-
-                                    <Users
-                                        size={
-                                            20
-                                        }
-                                    />
-
-
-                                    <strong>
-                                        {
-                                            people
-                                        }
-                                    </strong>
-
-
-                                    <span>
-                                        {Number(
-                                            people
-                                        ) ===
-                                            1
-                                            ? language ===
-                                                "fr"
-                                                ? "personne"
-                                                : "person"
-                                            : language ===
-                                                "fr"
-                                                ? "personnes"
-                                                : "people"}
-                                    </span>
-
-                                </div>
-
-
-                                <button
-                                    type="button"
-                                    onClick={
-                                        increasePeople
-                                    }
-                                    disabled={
-                                        Number(
-                                            people
-                                        ) >=
-                                        Math.max(
-                                            ...peopleOptions
-                                        )
-                                    }
-                                    aria-label={
-                                        language ===
-                                            "fr"
-                                            ? "Augmenter le nombre de personnes"
-                                            : "Increase people"
-                                    }
-                                >
-                                    +
-                                </button>
-
-                            </div>
-
-                        </section>
-                        {/* =================================================
-                            STEP 4 — CATEGORY
-                        ================================================== */}
-
-                        <section
-                            className="nt-discovery-step"
-                        >
-
-                            <div
-                                className="nt-discovery-step-header"
-                            >
-
-                                <div
-                                    className="nt-discovery-step-number"
-                                >
-                                    4
-                                </div>
-
-
-                                <div>
-
-                                    <h2>
-                                        {language ===
-                                            "fr"
-                                            ? "Que recherchez-vous ?"
-                                            : "What are you looking for?"}
-                                    </h2>
-
-
-                                    <p>
-                                        {language ===
-                                            "fr"
-                                            ? "Choisissez une catégorie ou laissez-nous chercher partout."
-                                            : "Choose a category or let us search everywhere nearby."}
-                                    </p>
-
-                                </div>
-
-                            </div>
-
-
-                            <div
-                                className="nt-category-grid"
-                            >
-
-                                {/* =============================================
-                                    ALL CATEGORIES
-                                ============================================== */}
-
-                                <button
-                                    type="button"
-                                    className={
-                                        category ===
-                                            ""
-                                            ? "nt-category-card selected"
-                                            : "nt-category-card"
-                                    }
-                                    onClick={() =>
-                                        setCategory(
-                                            ""
-                                        )
-                                    }
-                                    aria-pressed={
-                                        category ===
-                                        ""
-                                    }
-                                >
-
-                                    <div
-                                        className="nt-category-icon"
-                                    >
-                                        🔎
-                                    </div>
-
-
-                                    <strong>
-                                        {language ===
-                                            "fr"
-                                            ? "Tout"
-                                            : "All"}
-                                    </strong>
-
-                                </button>
-
-
-                                {/* =============================================
-                                    CATEGORY OPTIONS
-                                ============================================== */}
-
-                                {categories.map(
-                                    item => {
-
-                                        const selected =
-                                            category ===
-                                            item.id;
-
-
-                                        return (
-                                            <button
-                                                key={
-                                                    item.id
-                                                }
-                                                type="button"
-                                                className={
-                                                    selected
-                                                        ? "nt-category-card selected"
-                                                        : "nt-category-card"
-                                                }
-                                                onClick={() =>
-                                                    setCategory(
-                                                        selected
-                                                            ? ""
-                                                            : item.id
-                                                    )
-                                                }
-                                                aria-pressed={
-                                                    selected
-                                                }
-                                            >
-
-                                                <div
-                                                    className="nt-category-icon"
-                                                >
-
-                                                    <span
-                                                        aria-hidden="true"
-                                                    >
-                                                        {
-                                                            item.icon
-                                                        }
-                                                    </span>
-
-                                                </div>
-
-
-                                                <strong>
-                                                    {getCategoryName(
-                                                        item
-                                                    )}
-                                                </strong>
-
-                                            </button>
-                                        );
-                                    }
-                                )}
-
-                            </div>
-
-                        </section>
-
-
-                        {/* =================================================
-                            SEARCH ERROR
-                        ================================================== */}
-
-                        {error && (
-                            <div
-                                className="nt-discovery-error"
-                                role="alert"
-                            >
-
-                                <MapPin
-                                    size={
-                                        17
-                                    }
+                        {loadingLocation ? (
+                            <>
+                                <span
+                                    className="nt-loading-spinner"
                                 />
 
                                 <span>
-                                    {
-                                        error
-                                    }
+                                    {language ===
+                                        "fr"
+                                        ? "Localisation..."
+                                        : "Getting your location..."}
                                 </span>
+                            </>
+                        ) : (
+                            <>
+                                <Navigation
+                                    size={20}
+                                />
 
+                                <span>
+                                    {hasLocation
+                                        ? (
+                                            language ===
+                                                "fr"
+                                                ? "Position actuelle détectée"
+                                                : "Current location detected"
+                                        )
+                                        : (
+                                            language ===
+                                                "fr"
+                                                ? "Utiliser ma position actuelle"
+                                                : "Use My Current Location"
+                                        )}
+                                </span>
+                            </>
+                        )}
+
+                    </button>
+
+
+                    {/* -------------------------------------------------
+                        LOCATION READY
+                    ------------------------------------------------- */}
+
+                    {hasLocation && (
+                        <div
+                            className="nt-location-success"
+                        >
+
+                            <MapPin
+                                size={17}
+                            />
+
+                            <div>
+
+                                <strong>
+                                    {language ===
+                                        "fr"
+                                        ? "Position prête"
+                                        : "Location ready"}
+                                </strong>
+
+                                {Number.isFinite(
+                                    Number(
+                                        coordinates?.accuracy
+                                    )
+                                ) && (
+                                        <span>
+                                            {language ===
+                                                "fr"
+                                                ? `Précision GPS : environ ${Math.round(
+                                                    Number(
+                                                        coordinates.accuracy
+                                                    )
+                                                )} m`
+                                                : `GPS accuracy: about ${Math.round(
+                                                    Number(
+                                                        coordinates.accuracy
+                                                    )
+                                                )} m`}
+                                        </span>
+                                    )}
+
+                            </div>
+
+                        </div>
+                    )}
+
+
+                    {/* -------------------------------------------------
+                        LOCATION ERROR
+                    ------------------------------------------------- */}
+
+                    {locationError &&
+                        error && (
+                            <div
+                                className="nt-location-error"
+                            >
+                                {error}
                             </div>
                         )}
 
 
-                        {/* =================================================
-                            SEARCH SUMMARY
-                        ================================================== */}
+                    {!hasLocation &&
+                        !loadingLocation && (
+                            <p
+                                className="nt-location-help"
+                            >
+                                <MapPin
+                                    size={16}
+                                />
+
+                                {language ===
+                                    "fr"
+                                    ? "Votre position actuelle est nécessaire pour calculer les distances."
+                                    : "Your current location is required to calculate distances."}
+                            </p>
+                        )}
+
+                </section>
+
+
+                {/* =================================================
+                    SEARCH FORM
+                ================================================= */}
+
+                <form
+                    onSubmit={
+                        handleSearch
+                    }
+                    className="nt-find-form"
+                >
+
+                    {/* =================================================
+                        CATEGORY
+                    ================================================= */}
+
+                    <section
+                        className="nt-find-section"
+                    >
 
                         <div
-                            className="nt-search-summary"
+                            className="nt-section-heading"
                         >
 
                             <div
-                                className="nt-search-summary-icon"
+                                className="nt-section-icon"
                             >
-
-                                <Navigation
-                                    size={
-                                        18
-                                    }
+                                <Sparkles
+                                    size={21}
                                 />
-
                             </div>
 
 
                             <div>
 
-                                <strong>
-                                    {hasLocation
-                                        ? language ===
-                                            "fr"
-                                            ? "Prêt à rechercher autour de vous"
-                                            : "Ready to search around you"
-                                        : language ===
-                                            "fr"
-                                            ? "Votre position est nécessaire"
-                                            : "Your location is required"}
-                                </strong>
+                                <h2>
+                                    {t(
+                                        "categoryTitle"
+                                    )}
+                                </h2>
 
-
-                                <span>
-                                    {hasLocation
-                                        ? language ===
-                                            "fr"
-                                            ? "Les résultats seront classés selon leur distance réelle depuis votre position."
-                                            : "Results will be ranked using their real distance from your location."
-                                        : language ===
-                                            "fr"
-                                            ? "Utilisez votre position actuelle pour continuer."
-                                            : "Use your current location to continue."}
-                                </span>
+                                <p>
+                                    {t(
+                                        "categorySubtitle"
+                                    )}
+                                </p>
 
                             </div>
 
                         </div>
 
 
-                        {/* =================================================
-                            SEARCH BUTTON
-                        ================================================== */}
+                        <div
+                            className="nt-category-grid"
+                        >
+
+                            {categories.map(
+                                item => (
+                                    <button
+                                        key={
+                                            item.id
+                                        }
+                                        type="button"
+                                        className={
+                                            category ===
+                                                item.id
+                                                ? "nt-category-card selected"
+                                                : "nt-category-card"
+                                        }
+                                        onClick={() => {
+                                            setCategory(
+                                                item.id
+                                            );
+
+                                            setError(
+                                                ""
+                                            );
+                                        }}
+                                    >
+
+                                        <span
+                                            className="nt-category-icon"
+                                        >
+                                            {getCategoryIcon(
+                                                item
+                                            )}
+                                        </span>
+
+                                        <span>
+                                            {getCategoryName(
+                                                item.id
+                                            )}
+                                        </span>
+
+                                    </button>
+                                )
+                            )}
+
+                        </div>
+
+                    </section>
+
+
+                    {/* =================================================
+                        BUDGET
+                    ================================================= */}
+
+                    <section
+                        className="nt-find-section"
+                    >
+
+                        <div
+                            className="nt-section-heading"
+                        >
+
+                            <div
+                                className="nt-step-number"
+                            >
+                                2
+                            </div>
+
+
+                            <div>
+
+                                <h2>
+                                    {t(
+                                        "chooseBudget"
+                                    )}
+                                </h2>
+
+                                <p>
+                                    {t(
+                                        "budgetSubtitle"
+                                    )}
+                                </p>
+
+                            </div>
+
+                        </div>
+
+
+                        <div
+                            className="nt-budget-grid"
+                        >
+
+                            {budgets.map(
+                                value => (
+                                    <button
+                                        key={
+                                            value
+                                        }
+                                        type="button"
+                                        className={
+                                            Number(
+                                                budget
+                                            ) ===
+                                                Number(
+                                                    value
+                                                ) &&
+                                                !customBudget
+                                                ? "nt-budget-option selected"
+                                                : "nt-budget-option"
+                                        }
+                                        onClick={() => {
+                                            setBudget(
+                                                value
+                                            );
+
+                                            setCustomBudget(
+                                                ""
+                                            );
+
+                                            setError(
+                                                ""
+                                            );
+                                        }}
+                                    >
+
+                                        <span
+                                            className="nt-budget-price"
+                                        >
+
+                                            <strong>
+                                                {formatBudget(
+                                                    value
+                                                )}
+                                            </strong>
+
+                                            <span>
+                                                FCFA
+                                            </span>
+
+                                        </span>
+
+                                    </button>
+                                )
+                            )}
+
+                        </div>
+
+
+                        {/* -------------------------------------------------
+                            CUSTOM BUDGET
+                        ------------------------------------------------- */}
+
+                        <div
+                            className="nt-custom-budget"
+                        >
+
+                            <label>
+                                {t(
+                                    "otherBudget"
+                                )}
+                            </label>
+
+
+                            <input
+                                type="number"
+                                min="1"
+                                inputMode="numeric"
+                                value={
+                                    customBudget
+                                }
+                                onChange={event => {
+                                    setCustomBudget(
+                                        event.target.value
+                                    );
+
+                                    setError(
+                                        ""
+                                    );
+                                }}
+                                placeholder={
+                                    t(
+                                        "enterBudget"
+                                    )
+                                }
+                            />
+
+                        </div>
+
+                    </section>
+
+
+                    {/* =================================================
+                        PEOPLE
+                    ================================================= */}
+
+                    <section
+                        className="nt-find-section"
+                    >
+
+                        <div
+                            className="nt-section-heading"
+                        >
+
+                            <div
+                                className="nt-section-icon"
+                            >
+                                <Users
+                                    size={21}
+                                />
+                            </div>
+
+
+                            <div>
+
+                                <h2>
+                                    {t(
+                                        "peopleTitle"
+                                    )}
+                                </h2>
+
+                                <p>
+                                    {t(
+                                        "peopleSubtitle"
+                                    )}
+                                </p>
+
+                            </div>
+
+                        </div>
+
+
+                        <div
+                            className="nt-people-control"
+                        >
+
+                            <button
+                                type="button"
+                                onClick={
+                                    decreasePeople
+                                }
+                                disabled={
+                                    Number(
+                                        people
+                                    ) <=
+                                    Math.min(
+                                        ...peopleOptions
+                                    )
+                                }
+                                aria-label={
+                                    language ===
+                                        "fr"
+                                        ? "Diminuer"
+                                        : "Decrease"
+                                }
+                            >
+                                −
+                            </button>
+
+
+                            <div>
+
+                                <strong>
+                                    {people}
+                                </strong>
+
+                                <span>
+                                    {Number(
+                                        people
+                                    ) ===
+                                        1
+                                        ? t(
+                                            "person"
+                                        )
+                                        : t(
+                                            "people"
+                                        )}
+                                </span>
+
+                            </div>
+
+
+                            <button
+                                type="button"
+                                onClick={
+                                    increasePeople
+                                }
+                                disabled={
+                                    Number(
+                                        people
+                                    ) >=
+                                    Math.max(
+                                        ...peopleOptions
+                                    )
+                                }
+                                aria-label={
+                                    language ===
+                                        "fr"
+                                        ? "Augmenter"
+                                        : "Increase"
+                                }
+                            >
+                                +
+                            </button>
+
+                        </div>
+
+                    </section>
+                    {/* =================================================
+                        ERROR
+                    ================================================== */}
+
+                    {error &&
+                        !locationError && (
+                            <div
+                                className="nt-find-error"
+                                role="alert"
+                            >
+                                {error}
+                            </div>
+                        )}
+
+
+                    {/* =================================================
+                        SEARCH ACTION
+                    ================================================== */}
+
+                    <div
+                        className="nt-search-action"
+                    >
 
                         <button
                             type="submit"
-                            className="nt-search-submit"
                             disabled={
                                 searching ||
+                                loadingLocation ||
                                 !hasLocation ||
-                                !finalBudget
+                                !visitorId
                             }
-                            style={{
-                                opacity:
-                                    !hasLocation ||
-                                        !finalBudget
-                                        ? 0.55
-                                        : 1,
-
-                                cursor:
-                                    searching ||
-                                        !hasLocation ||
-                                        !finalBudget
-                                        ? "not-allowed"
-                                        : "pointer",
-                            }}
                         >
 
                             {searching ? (
                                 <>
-
                                     <span
                                         className="nt-loading-spinner"
                                         style={{
                                             width:
-                                                "19px",
+                                                "20px",
 
                                             height:
-                                                "19px",
+                                                "20px",
 
                                             borderWidth:
                                                 "2px",
@@ -2011,18 +1526,14 @@ export default function FindPage() {
                                     <span>
                                         {language ===
                                             "fr"
-                                            ? "Recherche en cours..."
-                                            : "Finding nearby places..."}
+                                            ? "Recherche..."
+                                            : "Searching..."}
                                     </span>
-
                                 </>
                             ) : (
                                 <>
-
                                     <Search
-                                        size={
-                                            19
-                                        }
+                                        size={20}
                                     />
 
                                     <span>
@@ -2032,51 +1543,53 @@ export default function FindPage() {
                                             : "Find places near me"}
                                     </span>
 
-
                                     <ArrowRight
-                                        size={
-                                            18
-                                        }
+                                        size={20}
                                     />
-
                                 </>
                             )}
 
                         </button>
 
 
-                        {/* =================================================
-                            GPS PRIVACY / ACCURACY NOTE
-                        ================================================== */}
+                        {!hasLocation && (
+                            <p
+                                className="nt-search-disabled-message"
+                            >
+                                <LocateFixed
+                                    size={15}
+                                />
 
-                        <p
-                            style={{
-                                margin:
-                                    "12px auto 0",
+                                {language ===
+                                    "fr"
+                                    ? "Utilisez votre position actuelle pour continuer."
+                                    : "Use your current location to continue."}
+                            </p>
+                        )}
 
-                                maxWidth:
-                                    "560px",
+                    </div>
 
-                                textAlign:
-                                    "center",
+                </form>
 
-                                color:
-                                    "var(--nt-muted)",
 
-                                fontSize:
-                                    "0.72rem",
+                {/* =================================================
+                    LOCATION FOOTER NOTE
+                ================================================== */}
 
-                                lineHeight:
-                                    1.5,
-                            }}
-                        >
-                            {language ===
-                                "fr"
-                                ? "Votre position actuelle sert à calculer les distances. Un quartier saisi manuellement n'est pas utilisé pour déterminer votre position."
-                                : "Your current location is used to calculate distances. A manually entered area is not used to determine your position."}
-                        </p>
+                <div
+                    className="nt-location-footer-note"
+                >
 
-                    </form>
+                    <Navigation
+                        size={16}
+                    />
+
+                    <span>
+                        {language ===
+                            "fr"
+                            ? "Votre position GPS est utilisée pour calculer les distances. Une zone saisie manuellement n'est pas utilisée pour déterminer votre position."
+                            : "Your GPS location is used to calculate distances. A manually entered area is not used to determine your position."}
+                    </span>
 
                 </div>
 

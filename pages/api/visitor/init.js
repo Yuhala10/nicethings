@@ -1,12 +1,10 @@
 import crypto from "crypto";
 import supabaseAdmin from "../../../lib/supabaseAdmin";
 
-function validVisitorId(
-    value
-) {
+
+function validVisitorId(value) {
     if (
-        typeof value !==
-        "string"
+        typeof value !== "string"
     ) {
         return false;
     }
@@ -16,18 +14,19 @@ function validVisitorId(
     );
 }
 
-function normalizeLanguage(
-    language
-) {
+
+function normalizeLanguage(language) {
     return language === "fr"
         ? "fr"
         : "en";
 }
 
+
 export default async function handler(
     req,
     res
 ) {
+
     if (
         req.method !== "POST"
     ) {
@@ -37,29 +36,36 @@ export default async function handler(
         });
     }
 
+
     try {
+
         const {
             visitorId,
             language,
-        } =
-            req.body || {};
+        } = req.body || {};
+
 
         const selectedLanguage =
             normalizeLanguage(
                 language
             );
 
+
         /*
-         * Returning visitor
+         * =====================================================
+         * EXISTING VISITOR
+         * =====================================================
          */
+
         if (
             validVisitorId(
                 visitorId
             )
         ) {
+
             const {
                 data: visitor,
-                error,
+                error: lookupError,
             } =
                 await supabaseAdmin
                     .from(
@@ -74,94 +80,173 @@ export default async function handler(
                     )
                     .maybeSingle();
 
-            if (error) {
-                console.error(
-                    error
-                );
 
-                return res
-                    .status(500)
-                    .json({
-                        error:
-                            "Unable to load visitor.",
-                    });
-            }
+            /*
+             * If the database lookup succeeds and the
+             * visitor exists, reuse that visitor.
+             */
 
-            if (visitor) {
-                await supabaseAdmin
-                    .from(
-                        "nt_visitors"
-                    )
-                    .update({
-                        last_seen_at:
-                            new Date().toISOString(),
-                        language:
-                            selectedLanguage,
-                    })
-                    .eq(
-                        "id",
-                        visitor.id
+            if (
+                !lookupError &&
+                visitor
+            ) {
+
+                const {
+                    error:
+                    updateError,
+                } =
+                    await supabaseAdmin
+                        .from(
+                            "nt_visitors"
+                        )
+                        .update({
+                            last_seen_at:
+                                new Date().toISOString(),
+
+                            language:
+                                selectedLanguage,
+                        })
+                        .eq(
+                            "id",
+                            visitor.id
+                        );
+
+
+                if (
+                    updateError
+                ) {
+
+                    console.error(
+                        "Visitor update error:",
+                        updateError
                     );
 
+                    /*
+                     * Don't destroy the session just because
+                     * updating last_seen_at/language failed.
+                     *
+                     * The visitor itself is still valid.
+                     */
+                }
+
+
                 return res.status(200).json({
+
                     visitorId:
                         visitor.id,
-                    existing: true,
+
+                    existing:
+                        true,
+
                 });
             }
+
+
+            /*
+             * If the old UUID doesn't exist anymore,
+             * we deliberately continue below and create
+             * a fresh visitor.
+             *
+             * This prevents an old localStorage value from
+             * permanently blocking the user.
+             */
+
+            if (
+                lookupError
+            ) {
+
+                console.error(
+                    "Existing visitor lookup failed:",
+                    lookupError
+                );
+
+            }
+
         }
 
+
         /*
-         * New anonymous visitor
+         * =====================================================
+         * NEW / RECOVERED ANONYMOUS VISITOR
+         * =====================================================
          */
+
         const newVisitorId =
             crypto.randomUUID();
 
+
         const {
-            data: visitor,
-            error,
+            data: newVisitor,
+            error:
+            createError,
         } =
             await supabaseAdmin
                 .from(
                     "nt_visitors"
                 )
                 .insert({
+
                     id:
                         newVisitorId,
+
                     language:
                         selectedLanguage,
+
                 })
                 .select(
                     "id"
                 )
                 .single();
 
-        if (error) {
+
+        if (
+            createError ||
+            !newVisitor
+        ) {
+
             console.error(
-                error
+                "Visitor creation error:",
+                createError
             );
 
-            return res
-                .status(500)
-                .json({
-                    error:
-                        "Unable to create visitor.",
-                });
+
+            return res.status(500).json({
+                error:
+                    "Unable to create visitor.",
+            });
         }
 
+
+        /*
+         * Return the new database-backed visitor ID.
+         */
+
         return res.status(200).json({
+
             visitorId:
-                visitor.id,
-            existing: false,
+                newVisitor.id,
+
+            existing:
+                false,
+
         });
-    } catch (error) {
+
+
+    } catch (
+    error
+    ) {
+
         console.error(
+            "Visitor initialization error:",
             error
         );
 
+
         return res.status(500).json({
+
             error:
                 "Unable to initialize visitor.",
+
         });
     }
 }
