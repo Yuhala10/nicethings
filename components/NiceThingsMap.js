@@ -25,6 +25,7 @@ import {
     X,
 } from "lucide-react";
 
+
 /* =========================================================
    MARKERS
 ========================================================= */
@@ -60,6 +61,7 @@ const defaultIcon = L.icon({
     ],
 });
 
+
 const userIcon = L.divIcon({
     className:
         "nt-user-location-marker",
@@ -88,6 +90,7 @@ const userIcon = L.divIcon({
     ],
 });
 
+
 /* =========================================================
    HELPERS
 ========================================================= */
@@ -113,6 +116,7 @@ function isValidCoordinates(
         180
     );
 }
+
 
 function formatDistance(
     distanceKm
@@ -143,6 +147,7 @@ function formatDistance(
         1
     )} km`;
 }
+
 
 function formatDuration(
     minutes
@@ -180,14 +185,14 @@ function formatDuration(
         );
 
     if (
-        remaining ===
-        0
+        remaining === 0
     ) {
         return `${hours} h`;
     }
 
     return `${hours} h ${remaining} min`;
 }
+
 
 /* =========================================================
    MAP AUTO FIT
@@ -245,6 +250,7 @@ function RouteFitBounds({
     return null;
 }
 
+
 /* =========================================================
    FOLLOW USER
 ========================================================= */
@@ -273,14 +279,17 @@ function FollowUser({
                 Number(
                     userLocation.latitude
                 ),
+
                 Number(
                     userLocation.longitude
                 ),
             ],
+
             map.getZoom() <
                 15
                 ? 15
                 : map.getZoom(),
+
             {
                 animate:
                     true,
@@ -296,6 +305,57 @@ function FollowUser({
     return null;
 }
 
+
+/* =========================================================
+   MAP SIZE FIX
+
+   Leaflet sometimes calculates the map dimensions before
+   its parent/container has finished rendering.
+
+   When that happens, you can get a blank/empty-looking map.
+
+   This forces Leaflet to recalculate its size after mount
+   and whenever the window changes.
+========================================================= */
+
+function MapSizeFix() {
+    const map =
+        useMap();
+
+    useEffect(() => {
+        const refresh =
+            () => {
+                setTimeout(
+                    () => {
+                        map.invalidateSize(
+                            true
+                        );
+                    },
+                    100
+                );
+            };
+
+        refresh();
+
+        window.addEventListener(
+            "resize",
+            refresh
+        );
+
+        return () => {
+            window.removeEventListener(
+                "resize",
+                refresh
+            );
+        };
+    }, [
+        map,
+    ]);
+
+    return null;
+}
+
+
 /* =========================================================
    MAIN MAP
 ========================================================= */
@@ -306,12 +366,6 @@ export default function NiceThingsMap({
     onSelectSpot,
     followUser = false,
 
-    /*
-     * Destination selected from results.js.
-     *
-     * When View on map is pressed, ResultsPage passes
-     * the selected place here.
-     */
     selectedSpot:
     externalSelectedSpot = null,
 }) {
@@ -350,6 +404,11 @@ export default function NiceThingsMap({
         ""
     );
 
+
+    /* =====================================================
+       VALID SPOTS
+    ====================================================== */
+
     const validSpots =
         spots.filter(
             spot =>
@@ -359,10 +418,74 @@ export default function NiceThingsMap({
                 )
         );
 
+
+    /* =====================================================
+       DEFAULT CAMEROON CENTER
+    ====================================================== */
+
     const defaultCenter = [
         5.9631,
         10.1591,
     ];
+
+
+    /* =====================================================
+       MAP TILE PROVIDER
+    ====================================================== */
+
+    /*
+     * OpenStreetMap is the primary map source.
+     *
+     * The second TileLayer is intentionally NOT rendered
+     * simultaneously. It is used through React state if
+     * the primary tiles fail.
+     */
+
+    const [
+        tileProvider,
+        setTileProvider,
+    ] = useState(
+        "osm"
+    );
+
+
+    const tileUrl =
+        tileProvider ===
+            "carto"
+            ? "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+            : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+
+    const tileAttribution =
+        tileProvider ===
+            "carto"
+            ? '&copy; OpenStreetMap contributors &copy; CARTO'
+            : '&copy; OpenStreetMap contributors';
+
+
+    function handleTileError() {
+        /*
+         * If OpenStreetMap cannot load tiles, switch to
+         * CARTO's Voyager tiles.
+         *
+         * This prevents the user from being left with
+         * a completely blank map.
+         */
+
+        if (
+            tileProvider ===
+            "osm"
+        ) {
+            console.warn(
+                "NiceThings: OpenStreetMap tiles failed. Switching map provider."
+            );
+
+            setTileProvider(
+                "carto"
+            );
+        }
+    }
+
 
     /* =====================================================
        CALCULATE ROAD ROUTE
@@ -402,6 +525,7 @@ export default function NiceThingsMap({
                 spot.longitude
             );
 
+
         if (
             !isValidCoordinates(
                 fromLat,
@@ -419,6 +543,7 @@ export default function NiceThingsMap({
             return;
         }
 
+
         setSelectedSpot(
             spot
         );
@@ -430,6 +555,7 @@ export default function NiceThingsMap({
         setRouteError(
             ""
         );
+
 
         try {
             const params =
@@ -455,6 +581,7 @@ export default function NiceThingsMap({
                         ),
                 });
 
+
             const response =
                 await fetch(
                     `/api/route?${params.toString()}`,
@@ -467,14 +594,15 @@ export default function NiceThingsMap({
                     }
                 );
 
+
             const data =
                 await response.json();
+
 
             if (
                 !response.ok ||
                 !data?.success ||
-                !data?.geometry
-                    ?.coordinates ||
+                !data.geometry?.coordinates ||
                 data.geometry
                     .coordinates
                     .length <
@@ -485,6 +613,7 @@ export default function NiceThingsMap({
                     "No road route was found."
                 );
             }
+
 
             /*
              * OSRM / GeoJSON:
@@ -510,6 +639,7 @@ export default function NiceThingsMap({
                                     coordinate[1]
                                 );
 
+
                             if (
                                 !isValidCoordinates(
                                     latitude,
@@ -518,6 +648,7 @@ export default function NiceThingsMap({
                             ) {
                                 return null;
                             }
+
 
                             return [
                                 latitude,
@@ -529,6 +660,7 @@ export default function NiceThingsMap({
                         Boolean
                     );
 
+
             if (
                 coordinates.length <
                 2
@@ -538,9 +670,11 @@ export default function NiceThingsMap({
                 );
             }
 
+
             setRouteCoordinates(
                 coordinates
             );
+
 
             setRouteInfo({
                 distanceKm:
@@ -563,6 +697,7 @@ export default function NiceThingsMap({
                         data.durationSeconds
                     ),
             });
+
         } catch (
         error
         ) {
@@ -575,6 +710,7 @@ export default function NiceThingsMap({
                 error?.message ||
                 "Unable to calculate the road route."
             );
+
         } finally {
             setRouteLoading(
                 false
@@ -582,13 +718,9 @@ export default function NiceThingsMap({
         }
     }
 
+
     /* =====================================================
        EXTERNAL SELECTED SPOT
-
-       ResultsPage selects a place through
-       "View on map".
-
-       The route is then calculated automatically.
     ====================================================== */
 
     useEffect(() => {
@@ -612,6 +744,7 @@ export default function NiceThingsMap({
             return;
         }
 
+
         if (
             selectedSpot?.id ===
             externalSelectedSpot?.id &&
@@ -621,6 +754,7 @@ export default function NiceThingsMap({
             return;
         }
 
+
         setSelectedSpot(
             externalSelectedSpot
         );
@@ -629,13 +763,15 @@ export default function NiceThingsMap({
             externalSelectedSpot
         );
 
-        // calculateRoute is intentionally omitted.
+        // calculateRoute intentionally omitted.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         externalSelectedSpot?.id,
         userLocation?.latitude,
         userLocation?.longitude,
     ]);
+
+
     /* =====================================================
        CLEAR ROUTE
     ====================================================== */
@@ -658,6 +794,7 @@ export default function NiceThingsMap({
         );
     }
 
+
     /* =====================================================
        SELECT SPOT
     ====================================================== */
@@ -675,6 +812,7 @@ export default function NiceThingsMap({
             spot
         );
 
+
         if (
             typeof onSelectSpot ===
             "function"
@@ -684,11 +822,7 @@ export default function NiceThingsMap({
             );
         }
 
-        /*
-         * Automatically calculate the road route
-         * when a user selects a place directly
-         * from the map.
-         */
+
         if (
             userLocation &&
             isValidCoordinates(
@@ -709,15 +843,9 @@ export default function NiceThingsMap({
             );
         }
     }
-
     /* =====================================================
-       FOLLOWING USER / ROUTE REFRESH
-
-       When the user's live GPS moves approximately
-       50 metres or more, refresh the road route.
-
-       This keeps the route useful while travelling.
-    ====================================================== */
+      FOLLOWING USER / ROUTE REFRESH
+   ====================================================== */
 
     const [
         lastRoutedLocation,
@@ -725,6 +853,7 @@ export default function NiceThingsMap({
     ] = useState(
         null
     );
+
 
     function distanceBetweenPoints(
         lat1,
@@ -762,8 +891,7 @@ export default function NiceThingsMap({
         const a =
             Math.sin(
                 dLat / 2
-            ) **
-            2 +
+            ) ** 2 +
             Math.cos(
                 Number(
                     lat1
@@ -780,8 +908,7 @@ export default function NiceThingsMap({
             ) *
             Math.sin(
                 dLon / 2
-            ) **
-            2;
+            ) ** 2;
 
         const c =
             2 *
@@ -799,6 +926,7 @@ export default function NiceThingsMap({
             c
         );
     }
+
 
     useEffect(() => {
         if (
@@ -822,9 +950,11 @@ export default function NiceThingsMap({
             return;
         }
 
+
         /*
          * First GPS position while following.
          */
+
         if (
             !lastRoutedLocation
         ) {
@@ -847,6 +977,7 @@ export default function NiceThingsMap({
             return;
         }
 
+
         const movedKm =
             distanceBetweenPoints(
                 lastRoutedLocation.latitude,
@@ -855,9 +986,12 @@ export default function NiceThingsMap({
                 userLocation.longitude
             );
 
+
         /*
-         * Recalculate after approximately 50 metres.
+         * Recalculate after approximately
+         * 50 metres.
          */
+
         if (
             movedKm >=
             0.05
@@ -889,6 +1023,7 @@ export default function NiceThingsMap({
         lastRoutedLocation,
     ]);
 
+
     /* =====================================================
        MAP CENTER
     ====================================================== */
@@ -913,6 +1048,7 @@ export default function NiceThingsMap({
                 ];
             }
 
+
             if (
                 selectedSpot &&
                 isValidCoordinates(
@@ -931,6 +1067,7 @@ export default function NiceThingsMap({
                 ];
             }
 
+
             if (
                 validSpots.length >
                 0
@@ -948,21 +1085,18 @@ export default function NiceThingsMap({
                 ];
             }
 
+
             return defaultCenter;
+
         }, [
             userLocation,
             selectedSpot,
             validSpots,
         ]);
 
+
     /* =====================================================
        ROUTE DISPLAY
-
-       Outer dark line makes the route visible against
-       any map background.
-
-       Inner orange line makes it immediately obvious
-       which road the user should follow.
     ====================================================== */
 
     const hasRoute =
@@ -971,6 +1105,7 @@ export default function NiceThingsMap({
         ) &&
         routeCoordinates.length >=
         2;
+
 
     /* =====================================================
        GOOGLE MAPS FALLBACK
@@ -987,6 +1122,7 @@ export default function NiceThingsMap({
             return;
         }
 
+
         const destination =
             `${Number(
                 selectedSpot.latitude
@@ -994,7 +1130,9 @@ export default function NiceThingsMap({
                 selectedSpot.longitude
             )}`;
 
+
         let url;
+
 
         if (
             userLocation &&
@@ -1016,6 +1154,7 @@ export default function NiceThingsMap({
                 )}&destination=${encodeURIComponent(
                     destination
                 )}&travelmode=driving`;
+
         } else {
             url =
                 `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
@@ -1023,12 +1162,14 @@ export default function NiceThingsMap({
                 )}&travelmode=driving`;
         }
 
+
         window.open(
             url,
             "_blank",
             "noopener,noreferrer"
         );
     }
+
 
     /* =====================================================
        MAP UI
@@ -1052,18 +1193,48 @@ export default function NiceThingsMap({
 
                 overflow:
                     "hidden",
+
+                /*
+                 * Important fallback background.
+                 *
+                 * If tiles take a moment to load,
+                 * the user still sees the map area.
+                 */
+
+                background:
+                    "#e5e7eb",
             }}
         >
+
             <MapContainer
                 center={
                     mapCenter
                 }
+
                 zoom={
                     14
                 }
+
                 scrollWheelZoom={
                     true
                 }
+
+                dragging={
+                    true
+                }
+
+                doubleClickZoom={
+                    true
+                }
+
+                touchZoom={
+                    true
+                }
+
+                zoomControl={
+                    true
+                }
+
                 style={{
                     width:
                         "100%",
@@ -1073,12 +1244,56 @@ export default function NiceThingsMap({
 
                     minHeight:
                         "520px",
+
+                    background:
+                        "#e5e7eb",
                 }}
             >
+
+                {/* =================================================
+                   FORCE LEAFLET TO RECALCULATE ITS SIZE
+                ================================================== */}
+
+                <MapSizeFix />
+
+
+                {/* =================================================
+                   MAP TILES
+
+                   PRIMARY:
+                   OpenStreetMap
+
+                   FALLBACK:
+                   CARTO Voyager
+
+                   Voyager gives us a detailed road map with
+                   street names and neighborhood information
+                   where available.
+                ================================================== */}
+
                 <TileLayer
-                    attribution='&copy; OpenStreetMap contributors'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    key={
+                        tileProvider
+                    }
+
+                    attribution={
+                        tileAttribution
+                    }
+
+                    url={
+                        tileUrl
+                    }
+
+                    maxZoom={
+                        19
+                    }
+
+                    eventHandlers={{
+                        tileerror:
+                            handleTileError,
+                    }}
                 />
+
 
                 {/* =================================================
                    KEEP USER CENTERED WHEN FOLLOWING
@@ -1088,10 +1303,12 @@ export default function NiceThingsMap({
                     userLocation={
                         userLocation
                     }
+
                     enabled={
                         followUser
                     }
                 />
+
 
                 {/* =================================================
                    FIT COMPLETE ROAD ROUTE
@@ -1104,6 +1321,7 @@ export default function NiceThingsMap({
                         }
                     />
                 )}
+
 
                 {/* =================================================
                    USER LOCATION
@@ -1124,11 +1342,14 @@ export default function NiceThingsMap({
                                     userLocation.longitude
                                 ),
                             ]}
+
                             icon={
                                 userIcon
                             }
                         >
+
                             <Popup>
+
                                 <strong>
                                     You are here
                                 </strong>
@@ -1152,9 +1373,12 @@ export default function NiceThingsMap({
                                         m
                                     </div>
                                 )}
+
                             </Popup>
+
                         </Marker>
                     )}
+
 
                 {/* =================================================
                    PLACE MARKERS
@@ -1166,11 +1390,13 @@ export default function NiceThingsMap({
                             selectedSpot?.id ===
                             spot.id;
 
+
                         return (
                             <Marker
                                 key={
                                     spot.id
                                 }
+
                                 position={[
                                     Number(
                                         spot.latitude
@@ -1180,9 +1406,11 @@ export default function NiceThingsMap({
                                         spot.longitude
                                     ),
                                 ]}
+
                                 icon={
                                     defaultIcon
                                 }
+
                                 eventHandlers={{
                                     click:
                                         () =>
@@ -1191,18 +1419,22 @@ export default function NiceThingsMap({
                                             ),
                                 }}
                             >
+
                                 <Popup>
+
                                     <div
                                         style={{
                                             minWidth:
                                                 "180px",
                                         }}
                                     >
+
                                         <strong>
                                             {
                                                 spot.name
                                             }
                                         </strong>
+
 
                                         {spot.neighborhood && (
                                             <div
@@ -1214,16 +1446,22 @@ export default function NiceThingsMap({
                                                         "12px",
                                                 }}
                                             >
+
                                                 <MapPin
                                                     size={
                                                         12
                                                     }
-                                                />{" "}
+                                                />
+
+                                                {" "}
+
                                                 {
                                                     spot.neighborhood
                                                 }
+
                                             </div>
                                         )}
+
 
                                         {spot.distanceKm !==
                                             undefined &&
@@ -1246,13 +1484,16 @@ export default function NiceThingsMap({
                                                 </div>
                                             )}
 
+
                                         <button
                                             type="button"
+
                                             onClick={() =>
                                                 handleSelectSpot(
                                                     spot
                                                 )
                                             }
+
                                             style={{
                                                 marginTop:
                                                     "10px",
@@ -1280,49 +1521,62 @@ export default function NiceThingsMap({
 
                                                 fontWeight:
                                                     700,
+
+                                                display:
+                                                    "flex",
+
+                                                alignItems:
+                                                    "center",
+
+                                                justifyContent:
+                                                    "center",
+
+                                                gap:
+                                                    "6px",
                                             }}
                                         >
+
                                             <Route
                                                 size={
                                                     14
                                                 }
                                             />
 
-                                            {" "}
                                             Route here
+
                                         </button>
+
                                     </div>
+
                                 </Popup>
+
                             </Marker>
                         );
                     }
                 )}
 
+
                 {/* =================================================
                    THICK ROAD ROUTE
 
-                   OUTER:
-                   11px dark casing
-
-                   INNER:
-                   7px orange route
-
-                   This creates a very visible route that
-                   can be followed on the map.
+                   OUTER DARK CASING
+                   INNER ORANGE ROUTE
                 ================================================== */}
 
                 {hasRoute && (
                     <>
+
                         <Polyline
                             positions={
                                 routeCoordinates
                             }
+
                             pathOptions={{
                                 color:
                                     "#111827",
 
                                 weight:
-                                    11,
+                                    12,
 
                                 opacity:
                                     0.95,
@@ -1332,13 +1586,18 @@ export default function NiceThingsMap({
 
                                 lineJoin:
                                     "round",
+
+                                interactive:
+                                    false,
                             }}
                         />
+
 
                         <Polyline
                             positions={
                                 routeCoordinates
                             }
+
                             pathOptions={{
                                 color:
                                     "#f97316",
@@ -1354,10 +1613,15 @@ export default function NiceThingsMap({
 
                                 lineJoin:
                                     "round",
+
+                                interactive:
+                                    false,
                             }}
                         />
+
                     </>
                 )}
+
             </MapContainer>
             {/* =================================================
                ROUTE INFORMATION PANEL
@@ -1400,6 +1664,7 @@ export default function NiceThingsMap({
                             "blur(8px)",
                     }}
                 >
+
                     <div
                         style={{
                             display:
@@ -1415,12 +1680,14 @@ export default function NiceThingsMap({
                                 "12px",
                         }}
                     >
+
                         <div
                             style={{
                                 minWidth:
                                     0,
                             }}
                         >
+
                             <div
                                 style={{
                                     display:
@@ -1448,6 +1715,7 @@ export default function NiceThingsMap({
                                         "0.04em",
                                 }}
                             >
+
                                 <Route
                                     size={
                                         14
@@ -1455,7 +1723,9 @@ export default function NiceThingsMap({
                                 />
 
                                 Destination
+
                             </div>
+
 
                             <div
                                 style={{
@@ -1485,7 +1755,9 @@ export default function NiceThingsMap({
                                     selectedSpot.name
                                 }
                             </div>
+
                         </div>
+
 
                         <button
                             type="button"
@@ -1528,13 +1800,17 @@ export default function NiceThingsMap({
                                     "pointer",
                             }}
                         >
+
                             <X
                                 size={
                                     17
                                 }
                             />
+
                         </button>
+
                     </div>
+
 
                     {/* =================================================
                        ROUTE LOADING
@@ -1562,6 +1838,7 @@ export default function NiceThingsMap({
                                     "#4b5563",
                             }}
                         >
+
                             <span
                                 style={{
                                     width:
@@ -1588,8 +1865,10 @@ export default function NiceThingsMap({
                             />
 
                             Calculating road route...
+
                         </div>
                     )}
+
 
                     {/* =================================================
                        ROUTE INFORMATION
@@ -1616,6 +1895,7 @@ export default function NiceThingsMap({
                                         "10px",
                                 }}
                             >
+
                                 <div
                                     style={{
                                         display:
@@ -1646,6 +1926,7 @@ export default function NiceThingsMap({
                                             700,
                                     }}
                                 >
+
                                     <Navigation
                                         size={
                                             14
@@ -1655,7 +1936,9 @@ export default function NiceThingsMap({
                                     {formatDistance(
                                         routeInfo.distanceKm
                                     )}
+
                                 </div>
+
 
                                 <div
                                     style={{
@@ -1687,6 +1970,7 @@ export default function NiceThingsMap({
                                             700,
                                     }}
                                 >
+
                                     <Clock3
                                         size={
                                             14
@@ -1696,7 +1980,9 @@ export default function NiceThingsMap({
                                     {formatDuration(
                                         routeInfo.durationMinutes
                                     )}
+
                                 </div>
+
 
                                 <span
                                     style={{
@@ -1709,8 +1995,10 @@ export default function NiceThingsMap({
                                 >
                                     Follow the orange road
                                 </span>
+
                             </div>
                         )}
+
 
                     {/* =================================================
                        ROUTE ERROR
@@ -1747,6 +2035,7 @@ export default function NiceThingsMap({
                                 }
                             </div>
                         )}
+
 
                     {/* =================================================
                        GOOGLE MAPS BUTTON
@@ -1802,6 +2091,7 @@ export default function NiceThingsMap({
                                     "pointer",
                             }}
                         >
+
                             <Navigation
                                 size={
                                     15
@@ -1809,10 +2099,13 @@ export default function NiceThingsMap({
                             />
 
                             Open directions in Google Maps
+
                         </button>
                     )}
+
                 </div>
             )}
+
 
             {/* =================================================
                MAP LEGEND
@@ -1848,6 +2141,7 @@ export default function NiceThingsMap({
                         "0.72rem",
                 }}
             >
+
                 <div
                     style={{
                         display:
@@ -1863,6 +2157,7 @@ export default function NiceThingsMap({
                             "5px",
                     }}
                 >
+
                     <span
                         style={{
                             width:
@@ -1885,7 +2180,9 @@ export default function NiceThingsMap({
                     <span>
                         Route
                     </span>
+
                 </div>
+
 
                 {userLocation && (
                     <div
@@ -1900,6 +2197,7 @@ export default function NiceThingsMap({
                                 "7px",
                         }}
                     >
+
                         <span
                             style={{
                                 width:
@@ -1928,9 +2226,12 @@ export default function NiceThingsMap({
                         <span>
                             Your location
                         </span>
+
                     </div>
                 )}
+
             </div>
+
 
             {/* =================================================
                SPINNING ANIMATION
@@ -1946,7 +2247,50 @@ export default function NiceThingsMap({
                         transform: rotate(360deg);
                     }
                 }
+
+                /*
+                 * Leaflet must have a real stacking context
+                 * above the page background.
+                 */
+
+                :global(.leaflet-container) {
+                    width: 100%;
+                    height: 520px;
+                    min-height: 520px;
+                    z-index: 1;
+                    font-family: inherit;
+                }
+
+                :global(.leaflet-tile) {
+                    max-width: none !important;
+                }
+
+                :global(.leaflet-control-container) {
+                    z-index: 1000;
+                }
+
+                :global(.leaflet-pane) {
+                    z-index: 400;
+                }
+
+                :global(.leaflet-top),
+                :global(.leaflet-bottom) {
+                    z-index: 1000;
+                }
+
+                :global(.leaflet-marker-pane) {
+                    z-index: 600;
+                }
+
+                :global(.leaflet-popup-pane) {
+                    z-index: 700;
+                }
+
+                :global(.leaflet-overlay-pane) {
+                    z-index: 400;
+                }
             `}</style>
+
         </div>
     );
 }

@@ -5,7 +5,6 @@ import {
     ArrowRight,
     LocateFixed,
     MapPin,
-    Navigation,
     Search,
     Sparkles,
     Users,
@@ -16,14 +15,12 @@ import { useLanguage } from "../lib/i18n";
 import { getCurrentLocation } from "../lib/location";
 import { NICE_THINGS } from "../lib/constants";
 
-
 export default function FindPage() {
     const {
         language,
         setLanguage,
         t,
     } = useLanguage();
-
 
     /* =====================================================
        VISITOR
@@ -36,18 +33,8 @@ export default function FindPage() {
 
 
     /* =====================================================
-       LOCATION
+       CURRENT GPS LOCATION ONLY
     ====================================================== */
-
-    const [
-        locationMode,
-        setLocationMode,
-    ] = useState("area");
-
-    const [
-        locationText,
-        setLocationText,
-    ] = useState("");
 
     const [
         coordinates,
@@ -57,6 +44,11 @@ export default function FindPage() {
     const [
         loadingLocation,
         setLoadingLocation,
+    ] = useState(false);
+
+    const [
+        locationError,
+        setLocationError,
     ] = useState(false);
 
 
@@ -127,11 +119,6 @@ export default function FindPage() {
         setError,
     ] = useState("");
 
-    const [
-        locationError,
-        setLocationError,
-    ] = useState(false);
-
 
     /* =====================================================
        CREATE VISITOR ID
@@ -143,7 +130,6 @@ export default function FindPage() {
                 "nicethings_visitor_id"
             );
 
-
         if (!id) {
             id =
                 typeof crypto !==
@@ -154,20 +140,20 @@ export default function FindPage() {
                         .toString(36)
                         .slice(2)}`;
 
-
             localStorage.setItem(
                 "nicethings_visitor_id",
                 id
             );
         }
 
-
-        setVisitorId(id);
+        setVisitorId(
+            id
+        );
     }, []);
 
 
     /* =====================================================
-       USE MY LOCATION
+       USE MY CURRENT LOCATION
     ====================================================== */
 
     async function useMyLocation() {
@@ -175,11 +161,9 @@ export default function FindPage() {
         setLocationError(false);
         setLoadingLocation(true);
 
-
         try {
             const location =
                 await getCurrentLocation();
-
 
             setCoordinates({
                 latitude:
@@ -191,24 +175,6 @@ export default function FindPage() {
                 accuracy:
                     location.accuracy,
             });
-
-
-            setLocationMode(
-                "gps"
-            );
-
-
-            /*
-             * Keep a human-readable label
-             * for the UI only.
-             *
-             * The real coordinates are sent
-             * separately to the API.
-             */
-
-            setLocationText(
-                t("currentLocation")
-            );
         } catch (
         locationErrorValue
         ) {
@@ -217,42 +183,24 @@ export default function FindPage() {
                 locationErrorValue
             );
 
-
-            setCoordinates(null);
-
-            setLocationMode(
-                "area"
+            setCoordinates(
+                null
             );
 
-            setLocationText("");
-
-            setLocationError(true);
+            setLocationError(
+                true
+            );
 
             setError(
-                t("locationError")
+                t(
+                    "locationError"
+                )
             );
         } finally {
-            setLoadingLocation(false);
+            setLoadingLocation(
+                false
+            );
         }
-    }
-
-
-    /* =====================================================
-       MANUAL LOCATION
-    ====================================================== */
-
-    function chooseManualLocation() {
-        setCoordinates(null);
-
-        setLocationMode(
-            "area"
-        );
-
-        setLocationText("");
-
-        setLocationError(false);
-
-        setError("");
     }
 
 
@@ -270,7 +218,6 @@ export default function FindPage() {
                     customBudget
                 );
 
-
             if (
                 Number.isFinite(
                     value
@@ -281,12 +228,10 @@ export default function FindPage() {
             }
         }
 
-
         const value =
             Number(
                 budget
             );
-
 
         return Number.isFinite(
             value
@@ -307,7 +252,6 @@ export default function FindPage() {
                 ...peopleOptions
             );
 
-
         setPeople(
             current =>
                 Math.min(
@@ -319,13 +263,11 @@ export default function FindPage() {
         );
     }
 
-
     function decreasePeople() {
         const minimum =
             Math.min(
                 ...peopleOptions
             );
-
 
         setPeople(
             current =>
@@ -337,11 +279,9 @@ export default function FindPage() {
                 )
         );
     }
-
-
     /* =====================================================
-       SEARCH
-    ====================================================== */
+         SEARCH
+      ====================================================== */
 
     async function handleSearch(
         event
@@ -350,7 +290,6 @@ export default function FindPage() {
 
         setError("");
         setLocationError(false);
-
 
         /* -------------------------------------------------
            VISITOR CHECK
@@ -366,16 +305,27 @@ export default function FindPage() {
             return;
         }
 
-
         /* -------------------------------------------------
-           LOCATION CHECK
+           GPS LOCATION IS REQUIRED
         ------------------------------------------------- */
 
         if (
-            locationMode ===
-            "area" &&
-            !locationText.trim()
+            !coordinates ||
+            !Number.isFinite(
+                Number(
+                    coordinates.latitude
+                )
+            ) ||
+            !Number.isFinite(
+                Number(
+                    coordinates.longitude
+                )
+            )
         ) {
+            setLocationError(
+                true
+            );
+
             setError(
                 t(
                     "locationRequired"
@@ -385,14 +335,12 @@ export default function FindPage() {
             return;
         }
 
-
         /* -------------------------------------------------
            BUDGET CHECK
         ------------------------------------------------- */
 
         const finalBudget =
             getFinalBudget();
-
 
         if (
             !finalBudget ||
@@ -407,9 +355,9 @@ export default function FindPage() {
             return;
         }
 
-
-        setSearching(true);
-
+        setSearching(
+            true
+        );
 
         try {
             const response =
@@ -428,27 +376,21 @@ export default function FindPage() {
                             JSON.stringify({
                                 visitorId,
 
+                                /*
+                                 * GPS ONLY.
+                                 *
+                                 * No manually entered
+                                 * location/quarter is sent.
+                                 */
                                 latitude:
-                                    coordinates?.latitude ??
-                                    null,
+                                    Number(
+                                        coordinates.latitude
+                                    ),
 
                                 longitude:
-                                    coordinates?.longitude ??
-                                    null,
-
-                                /*
-                                 * Only send manual
-                                 * location text when
-                                 * the user actually
-                                 * entered an area.
-                                 */
-
-                                locationText:
-                                    locationMode ===
-                                        "area"
-                                        ? locationText
-                                            .trim()
-                                        : null,
+                                    Number(
+                                        coordinates.longitude
+                                    ),
 
                                 budget:
                                     finalBudget,
@@ -467,9 +409,7 @@ export default function FindPage() {
                     }
                 );
 
-
             let data = {};
-
 
             try {
                 data =
@@ -477,7 +417,6 @@ export default function FindPage() {
             } catch {
                 data = {};
             }
-
 
             /* -------------------------------------------------
                ACCESS REQUIRED
@@ -494,7 +433,6 @@ export default function FindPage() {
                 return;
             }
 
-
             /* -------------------------------------------------
                SEARCH ERROR
             ------------------------------------------------- */
@@ -509,7 +447,6 @@ export default function FindPage() {
                     )
                 );
             }
-
 
             /* -------------------------------------------------
                SAVE SEARCH
@@ -540,22 +477,32 @@ export default function FindPage() {
                             data.admin
                         ),
 
+                    /*
+                     * This is only a display
+                     * label now.
+                     *
+                     * The actual matching location
+                     * is always latitude/longitude.
+                     */
                     locationText:
-                        locationMode ===
-                            "area"
-                            ? locationText
-                                .trim()
-                            : t(
-                                "currentLocation"
-                            ),
+                        t(
+                            "currentLocation"
+                        ),
 
                     latitude:
-                        coordinates?.latitude ??
-                        null,
+                        Number(
+                            coordinates.latitude
+                        ),
 
                     longitude:
-                        coordinates?.longitude ??
-                        null,
+                        Number(
+                            coordinates.longitude
+                        ),
+
+                    accuracy:
+                        Number(
+                            coordinates.accuracy
+                        ) || null,
 
                     budget:
                         finalBudget,
@@ -573,7 +520,6 @@ export default function FindPage() {
                 })
             );
 
-
             /* -------------------------------------------------
                GO TO RESULTS
             ------------------------------------------------- */
@@ -588,7 +534,6 @@ export default function FindPage() {
                 searchError
             );
 
-
             setError(
                 searchError?.message ||
                 t(
@@ -596,7 +541,9 @@ export default function FindPage() {
                 )
             );
         } finally {
-            setSearching(false);
+            setSearching(
+                false
+            );
         }
     }
 
@@ -609,7 +556,6 @@ export default function FindPage() {
         if (!category) {
             return null;
         }
-
 
         return (
             categories.find(
@@ -632,7 +578,6 @@ export default function FindPage() {
             return "";
         }
 
-
         return language ===
             "fr"
             ? item.fr
@@ -643,11 +588,28 @@ export default function FindPage() {
     const selectedCategory =
         getSelectedCategory();
 
-
     const finalBudget =
         getFinalBudget();
 
 
+    /* =====================================================
+       LOCATION READY
+    ====================================================== */
+
+    const locationReady =
+        Boolean(
+            coordinates &&
+            Number.isFinite(
+                Number(
+                    coordinates.latitude
+                )
+            ) &&
+            Number.isFinite(
+                Number(
+                    coordinates.longitude
+                )
+            )
+        );
     return (
         <AppShell>
 
@@ -670,7 +632,8 @@ export default function FindPage() {
                             justifyContent:
                                 "space-between",
 
-                            gap: "12px",
+                            gap:
+                                "12px",
 
                             marginBottom:
                                 "20px",
@@ -704,11 +667,6 @@ export default function FindPage() {
 
                         </button>
 
-
-                        {/* Keep this local switch
-                            because find.js previously
-                            provided it. AppShell also
-                            supports language switching. */}
 
                         <div
                             className="nt-language-switch"
@@ -809,12 +767,11 @@ export default function FindPage() {
 
                         <div
                             className={
-                                locationText
+                                locationReady
                                     ? "nt-search-progress-step completed"
                                     : "nt-search-progress-step active"
                             }
                         />
-
 
                         <div
                             className={
@@ -824,7 +781,6 @@ export default function FindPage() {
                             }
                         />
 
-
                         <div
                             className={
                                 people
@@ -832,7 +788,6 @@ export default function FindPage() {
                                     : "nt-search-progress-step"
                             }
                         />
-
 
                         <div
                             className={
@@ -857,7 +812,7 @@ export default function FindPage() {
                     >
 
                         {/* =================================================
-                            STEP 1 — LOCATION
+                            STEP 1 — CURRENT LOCATION
                         ================================================== */}
 
                         <section
@@ -921,7 +876,7 @@ export default function FindPage() {
 
                                         <span>
                                             {t(
-                                                "locationOptional"
+                                                "currentLocation"
                                             )}
                                         </span>
 
@@ -930,7 +885,9 @@ export default function FindPage() {
                                 </div>
 
 
-                                {/* GPS */}
+                                {/* =================================================
+                                    GPS ONLY
+                                ================================================== */}
 
                                 <button
                                     type="button"
@@ -941,8 +898,7 @@ export default function FindPage() {
                                         loadingLocation
                                     }
                                     className={
-                                        locationMode ===
-                                            "gps"
+                                        locationReady
                                             ? "nt-location-option active"
                                             : "nt-location-option"
                                     }
@@ -950,6 +906,7 @@ export default function FindPage() {
 
                                     {loadingLocation ? (
                                         <>
+
                                             <span
                                                 className="nt-loading-spinner"
                                                 style={{
@@ -969,9 +926,11 @@ export default function FindPage() {
                                                     "gettingLocation"
                                                 )}
                                             </span>
+
                                         </>
                                     ) : (
                                         <>
+
                                             <LocateFixed
                                                 size={
                                                     19
@@ -979,113 +938,43 @@ export default function FindPage() {
                                             />
 
                                             <span>
-                                                {t(
-                                                    "useMyLocation"
-                                                )}
+                                                {locationReady
+                                                    ? t(
+                                                        "locationDetected"
+                                                    )
+                                                    : t(
+                                                        "useMyLocation"
+                                                    )}
                                             </span>
+
                                         </>
                                     )}
 
                                 </button>
 
 
-                                {/* Manual */}
+                                {/* =================================================
+                                    LOCATION STATUS
+                                ================================================== */}
 
-                                <button
-                                    type="button"
-                                    onClick={
-                                        chooseManualLocation
-                                    }
-                                    className={
-                                        locationMode ===
-                                            "area"
-                                            ? "nt-location-option active"
-                                            : "nt-location-option"
-                                    }
-                                >
+                                {locationReady && (
+                                    <div
+                                        className="nt-current-location-success"
+                                    >
 
-                                    <Navigation
-                                        size={18}
-                                    />
+                                        <LocateFixed
+                                            size={17}
+                                        />
 
-                                    <span>
-                                        {t(
-                                            "manualArea"
-                                        )}
-                                    </span>
+                                        <span>
+                                            {t(
+                                                "locationDetected"
+                                            )}
+                                        </span>
 
-                                </button>
+                                    </div>
+                                )}
 
-
-                                {/* Manual input */}
-
-                                {locationMode ===
-                                    "area" && (
-                                        <div
-                                            className="nt-location-search"
-                                        >
-
-                                            <MapPin
-                                                size={18}
-                                            />
-
-                                            <input
-                                                type="text"
-                                                value={
-                                                    locationText
-                                                }
-                                                onChange={event => {
-                                                    setLocationText(
-                                                        event
-                                                            .target
-                                                            .value
-                                                    );
-
-                                                    setError(
-                                                        ""
-                                                    );
-
-                                                    setLocationError(
-                                                        false
-                                                    );
-                                                }}
-                                                placeholder={t(
-                                                    "locationPlaceholder"
-                                                )}
-                                                autoComplete="off"
-                                                aria-label={t(
-                                                    "location"
-                                                )}
-                                            />
-
-                                        </div>
-                                    )}
-
-
-                                {/* GPS success */}
-
-                                {locationMode ===
-                                    "gps" &&
-                                    coordinates && (
-                                        <div
-                                            className="nt-current-location-success"
-                                        >
-
-                                            <LocateFixed
-                                                size={17}
-                                            />
-
-                                            <span>
-                                                {t(
-                                                    "locationDetected"
-                                                )}
-                                            </span>
-
-                                        </div>
-                                    )}
-
-
-                                {/* Location error */}
 
                                 {locationError && (
                                     <div
@@ -1237,8 +1126,6 @@ export default function FindPage() {
                             </div>
 
                         </section>
-
-
                         {/* =================================================
                             STEP 3 — PEOPLE
                         ================================================== */}
@@ -1256,7 +1143,6 @@ export default function FindPage() {
                                 >
                                     3
                                 </div>
-
 
                                 <div>
 
@@ -1396,7 +1282,6 @@ export default function FindPage() {
                                     4
                                 </div>
 
-
                                 <div>
 
                                     <h2>
@@ -1426,12 +1311,10 @@ export default function FindPage() {
                                             category ===
                                             item.id;
 
-
                                         const itemName =
                                             getCategoryName(
                                                 item
                                             );
-
 
                                         return (
                                             <button
@@ -1502,7 +1385,9 @@ export default function FindPage() {
                                         : "nt-location-option"
                                 }
                                 onClick={() =>
-                                    setCategory("")
+                                    setCategory(
+                                        ""
+                                    )
                                 }
                                 style={{
                                     width:
@@ -1576,8 +1461,11 @@ export default function FindPage() {
                                     />
 
                                     <strong>
-                                        {locationText ||
-                                            t(
+                                        {locationReady
+                                            ? t(
+                                                "currentLocation"
+                                            )
+                                            : t(
                                                 "location"
                                             )}
                                     </strong>
@@ -1694,12 +1582,14 @@ export default function FindPage() {
                                 type="submit"
                                 disabled={
                                     searching ||
-                                    loadingLocation
+                                    loadingLocation ||
+                                    !locationReady
                                 }
                             >
 
                                 {searching ? (
                                     <>
+
                                         <span
                                             className="nt-loading-spinner"
                                             style={{
@@ -1725,9 +1615,11 @@ export default function FindPage() {
                                                 "searching"
                                             )}
                                         </span>
+
                                     </>
                                 ) : (
                                     <>
+
                                         <Search
                                             size={19}
                                         />
@@ -1741,6 +1633,7 @@ export default function FindPage() {
                                         <ArrowRight
                                             size={19}
                                         />
+
                                     </>
                                 )}
 
@@ -1767,7 +1660,8 @@ export default function FindPage() {
                                 justifyContent:
                                     "center",
 
-                                gap: "7px",
+                                gap:
+                                    "7px",
 
                                 color:
                                     "var(--nt-muted)",
