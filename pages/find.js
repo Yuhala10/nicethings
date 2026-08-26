@@ -1532,46 +1532,26 @@ export default function FindPage() {
                                 {budgets.map(
                                     value => (
                                         <button
-                                            key={
-                                                value
-                                            }
+                                            key={value}
                                             type="button"
-                                            className={
-                                                Number(
-                                                    budget
-                                                ) ===
-                                                    Number(
-                                                        value
-                                                    ) &&
-                                                    customBudget ===
-                                                    ""
-                                                    ? "nt-choice-card active"
-                                                    : "nt-choice-card"
-                                            }
                                             onClick={() => {
-                                                setBudget(
-                                                    value
-                                                );
-
-                                                setCustomBudget(
-                                                    ""
-                                                );
+                                                setBudget(value);
+                                                setCustomBudget("");
+                                                setError("");
                                             }}
+                                            className={
+                                                Number(budget) === Number(value) && !customBudget
+                                                    ? "nt-budget-option selected"
+                                                    : "nt-budget-option"
+                                            }
                                         >
+                                            <span className="nt-budget-price">
+                                                <strong>
+                                                    {Number(value).toLocaleString("fr-FR")}
+                                                </strong>
 
-                                            <strong>
-                                                {Number(
-                                                    value
-                                                ).toLocaleString(
-                                                    "fr-FR"
-                                                )}
-                                            </strong>
-
-
-                                            <span>
-                                                FCFA
+                                                <span>FCFA</span>
                                             </span>
-
                                         </button>
                                     )
                                 )}

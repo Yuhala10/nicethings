@@ -441,9 +441,7 @@ export default function IntroducePage() {
            VISITOR ID
         ================================================== */
 
-        let visitorId =
-            null;
-
+        let visitorId = null;
 
         if (
             typeof window !==
@@ -456,12 +454,95 @@ export default function IntroducePage() {
         }
 
 
-        setLoading(
-            true
-        );
+        setLoading(true);
 
 
         try {
+
+            /*
+             * IMPORTANT:
+             *
+             * Do not trust a locally stored visitor ID
+             * blindly.
+             *
+             * Send it through the official visitor
+             * initialization endpoint first.
+             *
+             * If the old visitor no longer exists,
+             * /api/visitor/init creates a valid one.
+             */
+
+            const visitorResponse =
+                await fetch(
+                    "/api/visitor/init",
+                    {
+                        method:
+                            "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                        },
+
+                        body:
+                            JSON.stringify({
+                                visitorId:
+                                    visitorId ||
+                                    null,
+                            }),
+                    }
+                );
+
+
+            let visitorData = {};
+
+            try {
+                visitorData =
+                    await visitorResponse.json();
+            } catch {
+                visitorData = {};
+            }
+
+
+            if (
+                !visitorResponse.ok
+            ) {
+                throw new Error(
+                    visitorData.error ||
+                    "Unable to initialize your visitor session."
+                );
+            }
+
+
+            /*
+             * The official visitor API returns the
+             * valid visitor ID.
+             */
+
+            visitorId =
+                visitorData.visitorId ||
+                visitorData.newVisitorId ||
+                null;
+
+
+            if (!visitorId) {
+                throw new Error(
+                    "Unable to initialize your visitor session. Please try again."
+                );
+            }
+
+
+            /*
+             * Store the VALID database visitor ID.
+             */
+
+            localStorage.setItem(
+                "nicethings_visitor_id",
+                visitorId
+            );
+
+
+
             const response =
                 await fetch(
                     "/api/spots/introduce",

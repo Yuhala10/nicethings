@@ -16206,3 +16206,58 @@ body,
         padding: 15px;
     }
 }
+
+/* =========================================================
+   FIND SPOT — BEAUTIFUL BUDGET PRICES
+   ========================================================= */
+
+.nt-budget-option {
+    min-height: 58px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+}
+
+.nt-budget-price {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 6px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.nt-budget-price strong {
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+.nt-budget-price span {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    opacity: 0.75;
+}
+
+/* Selected budget */
+.nt-budget-option.selected .nt-budget-price span {
+    opacity: 0.9;
+}
+
+/* Small screens */
+@media (max-width: 520px) {
+    .nt-budget-price {
+        gap: 5px;
+    }
+
+    .nt-budget-price strong {
+        font-size: 0.95rem;
+    }
+
+    .nt-budget-price span {
+        font-size: 0.68rem;
+    }
+}
