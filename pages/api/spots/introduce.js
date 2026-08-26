@@ -31,11 +31,17 @@ function isValidLongitude(value) {
    HANDLER
 ========================================================= */
 
-export default async function handler(req, res) {
+export default async function handler(
+    req,
+    res
+) {
 
-    if (req.method !== "POST") {
+    if (
+        req.method !== "POST"
+    ) {
         return res.status(405).json({
-            error: "Method not allowed.",
+            error:
+                "Method not allowed.",
         });
     }
 
@@ -66,26 +72,92 @@ export default async function handler(req, res) {
 
             estimatedPrice,
 
-            /*
-             * These are accepted from the frontend
-             * for compatibility, but they are NOT
-             * stored because the database does not
-             * contain submitter_name / submitter_phone.
-             */
             submittedByName,
             submittedByPhone,
-
         } = body;
 
 
         /* =====================================================
-           REQUIRED BASIC INFORMATION
+           VISITOR VALIDATION
         ====================================================== */
 
         if (
-            typeof name !== "string" ||
+            !visitorId ||
+            typeof visitorId !==
+            "string"
+        ) {
+            return res.status(400).json({
+                error:
+                    "Your visitor session is missing. Please refresh the app and try again.",
+                visitorSessionRequired:
+                    true,
+            });
+        }
+
+
+        /*
+         * Confirm that the visitor actually exists
+         * in nt_visitors before using visitor_id as
+         * a foreign key.
+         */
+
+        const {
+            data: visitor,
+            error: visitorError,
+        } =
+            await supabaseAdmin
+                .from(
+                    "nt_visitors"
+                )
+                .select(
+                    "id"
+                )
+                .eq(
+                    "id",
+                    visitorId
+                )
+                .maybeSingle();
+
+
+        if (
+            visitorError
+        ) {
+
+            console.error(
+                "Visitor validation error:",
+                visitorError
+            );
+
+            return res.status(500).json({
+                error:
+                    "Unable to verify your visitor session.",
+            });
+        }
+
+
+        if (
+            !visitor
+        ) {
+
+            return res.status(400).json({
+                error:
+                    "Your visitor session has expired or is invalid. Please refresh the app and try again.",
+                visitorSessionInvalid:
+                    true,
+            });
+        }
+
+
+        /* =====================================================
+           REQUIRED SPOT INFORMATION
+        ====================================================== */
+
+        if (
+            typeof name !==
+            "string" ||
             !name.trim()
         ) {
+
             return res.status(400).json({
                 error:
                     "Spot name is required.",
@@ -94,9 +166,11 @@ export default async function handler(req, res) {
 
 
         if (
-            typeof address !== "string" ||
+            typeof address !==
+            "string" ||
             !address.trim()
         ) {
+
             return res.status(400).json({
                 error:
                     "Please provide an address or clear directions.",
@@ -116,10 +190,10 @@ export default async function handler(req, res) {
                 longitude
             )
         ) {
+
             return res.status(400).json({
                 error:
                     "You must be physically at the Spot and capture its current GPS location before submitting it.",
-
                 locationRequired:
                     true,
             });
@@ -127,11 +201,15 @@ export default async function handler(req, res) {
 
 
         const numericLatitude =
-            Number(latitude);
+            Number(
+                latitude
+            );
 
 
         const numericLongitude =
-            Number(longitude);
+            Number(
+                longitude
+            );
 
 
         /* =====================================================
@@ -148,18 +226,17 @@ export default async function handler(req, res) {
             Number.isFinite(
                 numericAccuracy
             ) &&
-            numericAccuracy > 150
+            numericAccuracy >
+            150
         ) {
+
             return res.status(400).json({
                 error:
                     "Your GPS location is not accurate enough. Please move closer to the Spot or wait for a better GPS signal and try again.",
-
                 locationRequired:
                     true,
-
                 accuracyTooLow:
                     true,
-
                 accuracy:
                     numericAccuracy,
             });
@@ -175,8 +252,10 @@ export default async function handler(req, res) {
 
 
         if (
-            estimatedPrice !== null &&
-            estimatedPrice !== undefined &&
+            estimatedPrice !==
+            null &&
+            estimatedPrice !==
+            undefined &&
             String(
                 estimatedPrice
             ).trim() !== ""
@@ -194,6 +273,7 @@ export default async function handler(req, res) {
                 ) ||
                 numericPrice < 0
             ) {
+
                 return res.status(400).json({
                     error:
                         "Invalid estimated price.",
@@ -203,7 +283,7 @@ export default async function handler(req, res) {
 
 
         /* =====================================================
-           CREATE SUBMISSION
+           CREATE SPOT SUBMISSION
         ====================================================== */
 
         const {
@@ -217,15 +297,15 @@ export default async function handler(req, res) {
                 .insert({
 
                     /* -----------------------------------------
-                       VISITOR
+                       VALIDATED VISITOR
                     ------------------------------------------ */
 
                     visitor_id:
-                        visitorId || null,
+                        visitor.id,
 
 
                     /* -----------------------------------------
-                       BASIC SPOT INFORMATION
+                       SPOT
                     ------------------------------------------ */
 
                     name:
@@ -250,9 +330,6 @@ export default async function handler(req, res) {
 
                     /* -----------------------------------------
                        DESCRIPTIVE LOCATION
-                       
-                       These are informational only.
-                       GPS is the authoritative location.
                     ------------------------------------------ */
 
                     address:
@@ -309,13 +386,11 @@ export default async function handler(req, res) {
 
                     /* -----------------------------------------
                        PRICE
-
-                       Database column:
-                       price_information
                     ------------------------------------------ */
 
                     price_information:
-                        numericPrice !== null
+                        numericPrice !==
+                            null
                             ? String(
                                 numericPrice
                             )
@@ -323,17 +398,18 @@ export default async function handler(req, res) {
 
 
                     /*
-                     * Do NOT manually set:
+                     * IMPORTANT:
                      *
-                     * status
-                     * reviewed_at
-                     * spot_id
-                     * admin_note
-                     * created_at
-                     * updated_at
+                     * We do NOT insert:
                      *
-                     * Let the database handle these.
+                     * submitter_name
+                     * submitter_phone
+                     * estimated_price
+                     *
+                     * because those columns do not exist
+                     * in nt_spot_submissions.
                      */
+
                 })
                 .select(
                     "id"
@@ -345,7 +421,9 @@ export default async function handler(req, res) {
            DATABASE ERROR
         ====================================================== */
 
-        if (error) {
+        if (
+            error
+        ) {
 
             console.error(
                 "NiceThings spot submission database error:",
@@ -354,19 +432,15 @@ export default async function handler(req, res) {
 
 
             return res.status(500).json({
-
                 error:
                     error.message ||
                     "Unable to submit the Spot.",
-
                 details:
                     error.details ||
                     null,
-
                 code:
                     error.code ||
                     null,
-
             });
         }
 
@@ -380,10 +454,8 @@ export default async function handler(req, res) {
             success:
                 true,
 
-
             submissionId:
                 data.id,
-
 
             location: {
 
@@ -405,10 +477,12 @@ export default async function handler(req, res) {
         });
 
 
-    } catch (error) {
+    } catch (
+    error
+    ) {
 
         console.error(
-            "NiceThings introduce spot error:",
+            "NiceThings spot submission error:",
             error
         );
 
