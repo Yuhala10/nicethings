@@ -21,10 +21,6 @@ import AppShell from "../components/layout/AppShell";
 import { useLanguage } from "../lib/i18n";
 import { NICE_THINGS } from "../lib/constants";
 
-/* =========================================================
-   MAP
-========================================================= */
-
 const NiceThingsMap =
     dynamic(
         () =>
@@ -57,20 +53,12 @@ const NiceThingsMap =
         }
     );
 
-/* =========================================================
-   RESULTS PAGE
-========================================================= */
-
 export default function ResultsPage() {
     const {
         language,
         setLanguage,
         t,
     } = useLanguage();
-
-    /* =====================================================
-       SEARCH
-    ====================================================== */
 
     const [
         search,
@@ -87,18 +75,15 @@ export default function ResultsPage() {
         setError,
     ] = useState("");
 
-    /* =====================================================
-       VIEW
-    ====================================================== */
-
     const [
         view,
         setView,
     ] = useState("list");
 
-    /* =====================================================
-       LIVE LOCATION
-    ====================================================== */
+    const [
+        selectedMapSpot,
+        setSelectedMapSpot,
+    ] = useState(null);
 
     const [
         liveLocation,
@@ -114,10 +99,6 @@ export default function ResultsPage() {
         locationError,
         setLocationError,
     ] = useState("");
-
-    /* =====================================================
-       LOAD SEARCH
-    ====================================================== */
 
     useEffect(() => {
         try {
@@ -137,7 +118,9 @@ export default function ResultsPage() {
             }
 
             const parsed =
-                JSON.parse(raw);
+                JSON.parse(
+                    raw
+                );
 
             if (
                 !parsed ||
@@ -173,10 +156,6 @@ export default function ResultsPage() {
         }
     }, [t]);
 
-    /* =====================================================
-       LIVE GPS TRACKING
-    ====================================================== */
-
     useEffect(() => {
         if (
             !followingUser
@@ -190,7 +169,8 @@ export default function ResultsPage() {
             !navigator.geolocation
         ) {
             setLocationError(
-                language === "fr"
+                language ===
+                    "fr"
                     ? "La géolocalisation n'est pas disponible sur cet appareil."
                     : "Location is not available on this device."
             );
@@ -265,7 +245,7 @@ export default function ResultsPage() {
                             language ===
                                 "fr"
                                 ? "La localisation prend trop de temps. Veuillez réessayer."
-                                : "Getting your location is taking too long. Please try again."
+                                : "Getting your location is taking too long."
                         );
                     }
                 },
@@ -292,10 +272,6 @@ export default function ResultsPage() {
         language,
     ]);
 
-    /* =====================================================
-       FOLLOW CONTROLS
-    ====================================================== */
-
     function startFollowingUser() {
         if (
             typeof window ===
@@ -303,9 +279,10 @@ export default function ResultsPage() {
             !navigator.geolocation
         ) {
             setLocationError(
-                language === "fr"
+                language ===
+                    "fr"
                     ? "La géolocalisation n'est pas disponible."
-                    : "Location is not available on this device."
+                    : "Location is not available."
             );
 
             return;
@@ -325,10 +302,6 @@ export default function ResultsPage() {
             false
         );
     }
-
-    /* =====================================================
-       CATEGORY
-    ====================================================== */
 
     function getCategoryName(
         categoryId
@@ -364,10 +337,6 @@ export default function ResultsPage() {
             ? category.fr
             : category.en;
     }
-
-    /* =====================================================
-       OPEN / CLOSED
-    ====================================================== */
 
     function isOpen(
         spot
@@ -448,10 +417,6 @@ export default function ResultsPage() {
         );
     }
 
-    /* =====================================================
-       PRICE
-    ====================================================== */
-
     function formatPrice(
         spot
     ) {
@@ -483,7 +448,8 @@ export default function ResultsPage() {
             ) &&
             minimum > 0 &&
             maximum > 0 &&
-            minimum !== maximum
+            minimum !==
+            maximum
         ) {
             return `${minimum.toLocaleString(
                 "fr-FR"
@@ -519,22 +485,9 @@ export default function ResultsPage() {
         );
     }
 
-    /* =====================================================
-       DISTANCE
-    ====================================================== */
-
     function formatDistance(
         distanceKm
     ) {
-        if (
-            distanceKm ===
-            null ||
-            distanceKm ===
-            undefined
-        ) {
-            return null;
-        }
-
         const distance =
             Number(
                 distanceKm
@@ -553,7 +506,8 @@ export default function ResultsPage() {
             distance < 1
         ) {
             return `${Math.round(
-                distance * 1000
+                distance *
+                1000
             )} m`;
         }
 
@@ -561,9 +515,315 @@ export default function ResultsPage() {
             1
         )} km`;
     }
+    /* =====================================================
+       OPEN PLACE
+    ====================================================== */
+
+    function openSpot(
+        spot
+    ) {
+        if (
+            !spot?.id
+        ) {
+            return;
+        }
+
+        sessionStorage.setItem(
+            "nicethings_selected_spot",
+            JSON.stringify({
+                spot,
+
+                searchId:
+                    search?.searchId ||
+                    null,
+            })
+        );
+
+        window.location.href =
+            `/spot/${spot.id}`;
+    }
 
     /* =====================================================
-       BUDGET
+       VIEW ON MAP
+
+       Select destination FIRST.
+
+       NiceThingsMap receives selectedSpot and
+       automatically calculates the road route.
+    ====================================================== */
+
+    function viewSpotOnMap(
+        spot
+    ) {
+        if (
+            !spot
+        ) {
+            return;
+        }
+
+        setSelectedMapSpot(
+            spot
+        );
+
+        setView(
+            "map"
+        );
+
+        setTimeout(() => {
+            const mapElement =
+                document.querySelector(
+                    ".nt-results-map"
+                );
+
+            if (
+                mapElement
+            ) {
+                mapElement.scrollIntoView({
+                    behavior:
+                        "smooth",
+
+                    block:
+                        "start",
+                });
+            }
+        }, 100);
+    }
+
+    /* =====================================================
+       PRIMARY RESULTS
+
+       Only places within 1 km are displayed as
+       the main nearby matches.
+    ====================================================== */
+
+    const results =
+        useMemo(() => {
+            if (
+                !Array.isArray(
+                    search?.results
+                )
+            ) {
+                return [];
+            }
+
+            return search.results
+                .filter(
+                    spot => {
+                        const distance =
+                            Number(
+                                spot?.distanceKm
+                            );
+
+                        return (
+                            Number.isFinite(
+                                distance
+                            ) &&
+                            distance >=
+                            0 &&
+                            distance <=
+                            1
+                        );
+                    }
+                )
+                .sort(
+                    (
+                        a,
+                        b
+                    ) => {
+                        const scoreA =
+                            Number(
+                                a?.match
+                                    ?.score
+                            ) || 0;
+
+                        const scoreB =
+                            Number(
+                                b?.match
+                                    ?.score
+                            ) || 0;
+
+                        if (
+                            scoreA !==
+                            scoreB
+                        ) {
+                            return (
+                                scoreB -
+                                scoreA
+                            );
+                        }
+
+                        return (
+                            Number(
+                                a.distanceKm
+                            ) -
+                            Number(
+                                b.distanceKm
+                            )
+                        );
+                    }
+                );
+        }, [
+            search,
+        ]);
+
+    /* =====================================================
+       ALTERNATIVES
+
+       Keep these separate from the primary nearby
+       results. They are NOT sent to the map.
+    ====================================================== */
+
+    const alternatives =
+        useMemo(() => {
+            if (
+                !Array.isArray(
+                    search?.alternatives
+                )
+            ) {
+                return [];
+            }
+
+            return search.alternatives
+                .filter(
+                    spot => {
+                        const distance =
+                            Number(
+                                spot?.distanceKm
+                            );
+
+                        return (
+                            Number.isFinite(
+                                distance
+                            ) &&
+                            distance >
+                            1 &&
+                            distance <=
+                            1.5
+                        );
+                    }
+                )
+                .sort(
+                    (
+                        a,
+                        b
+                    ) =>
+                        Number(
+                            a.distanceKm
+                        ) -
+                        Number(
+                            b.distanceKm
+                        )
+                );
+        }, [
+            search,
+        ]);
+
+    /* =====================================================
+       MAP LOCATION
+
+       Priority:
+       1. Live GPS
+       2. Search coordinates
+       3. Search metadata coordinates
+    ====================================================== */
+
+    const mapLocation =
+        useMemo(() => {
+            if (
+                liveLocation &&
+                Number.isFinite(
+                    Number(
+                        liveLocation.latitude
+                    )
+                ) &&
+                Number.isFinite(
+                    Number(
+                        liveLocation.longitude
+                    )
+                )
+            ) {
+                return {
+                    latitude:
+                        Number(
+                            liveLocation.latitude
+                        ),
+
+                    longitude:
+                        Number(
+                            liveLocation.longitude
+                        ),
+
+                    accuracy:
+                        liveLocation.accuracy,
+                };
+            }
+
+            if (
+                Number.isFinite(
+                    Number(
+                        search?.latitude
+                    )
+                ) &&
+                Number.isFinite(
+                    Number(
+                        search?.longitude
+                    )
+                )
+            ) {
+                return {
+                    latitude:
+                        Number(
+                            search.latitude
+                        ),
+
+                    longitude:
+                        Number(
+                            search.longitude
+                        ),
+                };
+            }
+
+            if (
+                Number.isFinite(
+                    Number(
+                        search
+                            ?.searchMeta
+                            ?.latitude
+                    )
+                ) &&
+                Number.isFinite(
+                    Number(
+                        search
+                            ?.searchMeta
+                            ?.longitude
+                    )
+                )
+            ) {
+                return {
+                    latitude:
+                        Number(
+                            search
+                                .searchMeta
+                                .latitude
+                        ),
+
+                    longitude:
+                        Number(
+                            search
+                                .searchMeta
+                                .longitude
+                        ),
+                };
+            }
+
+            return null;
+        }, [
+            liveLocation,
+            search,
+        ]);
+
+    /* =====================================================
+       SMART MATCH INFORMATION
     ====================================================== */
 
     function getBudgetStatus(
@@ -576,150 +836,15 @@ export default function ResultsPage() {
         );
     }
 
-    function getBudgetLabel(
-        spot
-    ) {
-        const status =
-            getBudgetStatus(
-                spot
-            );
-
-        if (
-            !search?.budget
-        ) {
-            return null;
-        }
-
-        if (
-            status ===
-            "WITHIN_BUDGET"
-        ) {
-            return language ===
-                "fr"
-                ? "Dans votre budget"
-                : "Within your budget";
-        }
-
-        if (
-            status ===
-            "NEAR_BUDGET"
-        ) {
-            return language ===
-                "fr"
-                ? "Proche de votre budget"
-                : "Close to your budget";
-        }
-
-        if (
-            status ===
-            "ABOVE_BUDGET"
-        ) {
-            return language ===
-                "fr"
-                ? "Au-dessus de votre budget"
-                : "Above your budget";
-        }
-
-        if (
-            status ===
-            "UNKNOWN"
-        ) {
-            return language ===
-                "fr"
-                ? "Prix non vérifié"
-                : "Price information unavailable";
-        }
-
-        return null;
-    }
-
-    function getBudgetClass(
-        spot
-    ) {
-        const status =
-            getBudgetStatus(
-                spot
-            );
-
-        if (
-            status ===
-            "WITHIN_BUDGET"
-        ) {
-            return "within";
-        }
-
-        if (
-            status ===
-            "NEAR_BUDGET"
-        ) {
-            return "near";
-        }
-
-        if (
-            status ===
-            "ABOVE_BUDGET"
-        ) {
-            return "above";
-        }
-
-        return "unknown";
-    }
-
-    /* =====================================================
-       RECOMMENDATION
-    ====================================================== */
-
     function getRecommendation(
         spot
     ) {
-        const recommendation =
-            spot?.match
-                ?.recommendation;
-
         if (
-            recommendation
+            spot?.match
+                ?.recommendation
         ) {
-            if (
-                language ===
-                "fr" &&
-                spot?.match
-                    ?.budgetStatus ===
-                "WITHIN_BUDGET"
-            ) {
-                const distanceStatus =
-                    spot?.match
-                        ?.distanceStatus;
-
-                if (
-                    distanceStatus ===
-                    "VERY_CLOSE"
-                ) {
-                    return "Excellent choix — proche de vous et dans votre budget.";
-                }
-
-                if (
-                    distanceStatus ===
-                    "NEARBY"
-                ) {
-                    return "Très bon choix — proche de vous et dans votre budget.";
-                }
-
-                if (
-                    distanceStatus ===
-                    "MODERATE_DISTANCE"
-                ) {
-                    return "Bon choix — dans votre budget, mais un peu plus loin.";
-                }
-
-                if (
-                    distanceStatus ===
-                    "FAR"
-                ) {
-                    return "Dans votre budget, mais assez loin.";
-                }
-            }
-
-            return recommendation;
+            return spot.match
+                .recommendation;
         }
 
         const status =
@@ -761,8 +886,8 @@ export default function ResultsPage() {
             ) {
                 return language ===
                     "fr"
-                    ? "Dans votre budget, mais loin."
-                    : "Within your budget, but far away.";
+                    ? "Dans votre budget, mais plus loin."
+                    : "Within your budget, but farther away.";
             }
 
             return language ===
@@ -795,127 +920,6 @@ export default function ResultsPage() {
     }
 
     /* =====================================================
-       OPEN SPOT
-    ====================================================== */
-
-    function openSpot(
-        spot
-    ) {
-        if (
-            !spot?.id
-        ) {
-            return;
-        }
-
-        sessionStorage.setItem(
-            "nicethings_selected_spot",
-            JSON.stringify({
-                spot,
-
-                searchId:
-                    search?.searchId ||
-                    null,
-            })
-        );
-
-        window.location.href =
-            `/spot/${spot.id}`;
-    }
-
-    /* =====================================================
-       RESULTS
-    ====================================================== */
-
-    const results =
-        useMemo(() => {
-            if (
-                !search ||
-                !Array.isArray(
-                    search.results
-                )
-            ) {
-                return [];
-            }
-
-            return [
-                ...search.results,
-            ];
-        }, [search]);
-
-    const alternatives =
-        useMemo(() => {
-            if (
-                !search ||
-                !Array.isArray(
-                    search.alternatives
-                )
-            ) {
-                return [];
-            }
-
-            return [
-                ...search.alternatives,
-            ];
-        }, [search]);
-
-    /* =====================================================
-       MAP LOCATION
-    ====================================================== */
-
-    const mapLocation =
-        useMemo(() => {
-            if (
-                liveLocation
-            ) {
-                return {
-                    latitude:
-                        Number(
-                            liveLocation.latitude
-                        ),
-
-                    longitude:
-                        Number(
-                            liveLocation.longitude
-                        ),
-
-                    accuracy:
-                        liveLocation.accuracy,
-                };
-            }
-
-            if (
-                search &&
-                Number.isFinite(
-                    Number(
-                        search.latitude
-                    )
-                ) &&
-                Number.isFinite(
-                    Number(
-                        search.longitude
-                    )
-                )
-            ) {
-                return {
-                    latitude:
-                        Number(
-                            search.latitude
-                        ),
-
-                    longitude:
-                        Number(
-                            search.longitude
-                        ),
-                };
-            }
-
-            return null;
-        }, [
-            liveLocation,
-            search,
-        ]);
-
-    /* =====================================================
        RESULT CARD
     ====================================================== */
 
@@ -945,13 +949,8 @@ export default function ResultsPage() {
                 matchScore
             );
 
-        const budgetLabel =
-            getBudgetLabel(
-                spot
-            );
-
-        const budgetClass =
-            getBudgetClass(
+        const budgetStatus =
+            getBudgetStatus(
                 spot
             );
 
@@ -967,32 +966,9 @@ export default function ResultsPage() {
                     index
                 }
                 className={`nt-result-card ${isAlternative
-                        ? "nt-result-card-alternative"
-                        : ""
+                    ? "nt-result-card-alternative"
+                    : ""
                     }`}
-                onClick={() =>
-                    openSpot(
-                        spot
-                    )
-                }
-                role="button"
-                tabIndex={0}
-                onKeyDown={
-                    event => {
-                        if (
-                            event.key ===
-                            "Enter" ||
-                            event.key ===
-                            " "
-                        ) {
-                            event.preventDefault();
-
-                            openSpot(
-                                spot
-                            );
-                        }
-                    }
-                }
             >
                 <div className="nt-result-card-top">
                     <div className="nt-result-category-icon">
@@ -1004,21 +980,22 @@ export default function ResultsPage() {
                             style={{
                                 display:
                                     "flex",
+
                                 alignItems:
                                     "center",
+
                                 gap:
                                     "8px",
+
                                 flexWrap:
                                     "wrap",
                             }}
                         >
                             <h2>
-                                {
-                                    spot?.name ||
+                                {spot?.name ||
                                     t(
                                         "locationNotAvailable"
-                                    )
-                                }
+                                    )}
                             </h2>
 
                             {spot?.verified && (
@@ -1125,22 +1102,26 @@ export default function ResultsPage() {
                         )}
                 </div>
 
-                {(budgetLabel ||
-                    recommendation ||
-                    hasMatchScore) && (
+                {(hasMatchScore ||
+                    budgetStatus ||
+                    recommendation) && (
                         <div
                             className="nt-result-smart-info"
                             style={{
                                 marginTop:
                                     "14px",
+
                                 padding:
                                     "12px 14px",
+
                                 borderRadius:
                                     "14px",
+
                                 background:
                                     isAlternative
-                                        ? "rgba(180, 80, 60, 0.07)"
-                                        : "rgba(240, 125, 40, 0.07)",
+                                        ? "rgba(180,80,60,0.07)"
+                                        : "rgba(240,125,40,0.07)",
+
                                 border:
                                     "1px solid rgba(0,0,0,0.06)",
                             }}
@@ -1149,12 +1130,16 @@ export default function ResultsPage() {
                                 style={{
                                     display:
                                         "flex",
+
                                     alignItems:
                                         "center",
+
                                     justifyContent:
                                         "space-between",
+
                                     gap:
                                         "10px",
+
                                     flexWrap:
                                         "wrap",
                                 }}
@@ -1171,33 +1156,44 @@ export default function ResultsPage() {
                                             matchScore
                                         )}
                                         %
+                                        {" "}
                                         {t(
                                             "match"
                                         )}
                                     </span>
                                 )}
 
-                                {budgetLabel && (
-                                    <span
-                                        className={`nt-budget-status nt-budget-status-${budgetClass}`}
-                                        style={{
-                                            fontSize:
-                                                "0.78rem",
-                                            fontWeight:
-                                                700,
-                                        }}
-                                    >
-                                        {budgetClass ===
-                                            "within" &&
-                                            "✓ "}
+                                {budgetStatus ===
+                                    "WITHIN_BUDGET" && (
+                                        <span>
+                                            ✓{" "}
+                                            {language ===
+                                                "fr"
+                                                ? "Dans votre budget"
+                                                : "Within your budget"}
+                                        </span>
+                                    )}
 
-                                        {budgetClass ===
-                                            "above" &&
-                                            "⚠ "}
+                                {budgetStatus ===
+                                    "NEAR_BUDGET" && (
+                                        <span>
+                                            {language ===
+                                                "fr"
+                                                ? "Proche de votre budget"
+                                                : "Close to your budget"}
+                                        </span>
+                                    )}
 
-                                        {budgetLabel}
-                                    </span>
-                                )}
+                                {budgetStatus ===
+                                    "ABOVE_BUDGET" && (
+                                        <span>
+                                            ⚠{" "}
+                                            {language ===
+                                                "fr"
+                                                ? "Au-dessus de votre budget"
+                                                : "Above your budget"}
+                                        </span>
+                                    )}
                             </div>
 
                             {recommendation && (
@@ -1205,62 +1201,123 @@ export default function ResultsPage() {
                                     style={{
                                         margin:
                                             "7px 0 0",
+
                                         fontSize:
                                             "0.8rem",
+
                                         lineHeight:
                                             1.45,
                                     }}
                                 >
-                                    {recommendation}
+                                    {
+                                        recommendation
+                                    }
                                 </p>
                             )}
                         </div>
                     )}
 
+                <div
+                    style={{
+                        display:
+                            "flex",
+
+                        gap:
+                            "8px",
+
+                        flexWrap:
+                            "wrap",
+
+                        marginTop:
+                            "16px",
+                    }}
+                >
+                    <button
+                        type="button"
+                        className="nt-button-primary"
+                        onClick={() =>
+                            viewSpotOnMap(
+                                spot
+                            )
+                        }
+                    >
+                        <MapPin
+                            size={
+                                16
+                            }
+                        />
+
+                        {language ===
+                            "fr"
+                            ? "Voir sur la carte"
+                            : "View on map"}
+                    </button>
+
+                    <button
+                        type="button"
+                        className="nt-button-secondary"
+                        onClick={() =>
+                            openSpot(
+                                spot
+                            )
+                        }
+                    >
+                        <ArrowRight
+                            size={
+                                16
+                            }
+                        />
+
+                        {language ===
+                            "fr"
+                            ? "Voir le lieu"
+                            : "View place"}
+                    </button>
+                </div>
+
                 <div className="nt-result-card-bottom">
-                    <div>
-                        {open ===
-                            true ? (
-                            <span className="nt-open-status">
-                                <span className="nt-status-dot" />
+                    {open ===
+                        true ? (
+                        <span className="nt-open-status">
+                            <span className="nt-status-dot" />
 
-                                {t(
-                                    "open"
-                                )}
-                            </span>
-                        ) : open ===
-                            false ? (
-                            <span className="nt-closed-status">
-                                <span className="nt-status-dot" />
+                            {t(
+                                "open"
+                            )}
+                        </span>
+                    ) : open ===
+                        false ? (
+                        <span className="nt-closed-status">
+                            <span className="nt-status-dot" />
 
-                                {t(
-                                    "closed"
-                                )}
-                            </span>
-                        ) : (
-                            <span className="nt-neutral-status">
-                                <Clock3
-                                    size={
-                                        14
-                                    }
-                                />
+                            {t(
+                                "closed"
+                            )}
+                        </span>
+                    ) : (
+                        <span className="nt-neutral-status">
+                            <Clock3
+                                size={
+                                    14
+                                }
+                            />
 
-                                {t(
-                                    "hoursNotAvailable"
-                                )}
-                            </span>
-                        )}
-                    </div>
+                            {t(
+                                "hoursNotAvailable"
+                            )}
+                        </span>
+                    )}
                 </div>
             </article>
         );
     }
-
     /* =====================================================
-       LOADING
-    ====================================================== */
+      LOADING
+   ====================================================== */
 
-    if (loading) {
+    if (
+        loading
+    ) {
         return (
             <AppShell>
                 <main className="nt-results-page">
@@ -1281,7 +1338,7 @@ export default function ResultsPage() {
     }
 
     /* =====================================================
-       ERROR
+       ERROR / NO SEARCH
     ====================================================== */
 
     if (
@@ -1362,7 +1419,7 @@ export default function ResultsPage() {
     }
 
     /* =====================================================
-       PAGE
+       MAIN PAGE
     ====================================================== */
 
     return (
@@ -1370,7 +1427,9 @@ export default function ResultsPage() {
             <main className="nt-results-page">
                 <div className="nt-results-shell">
 
-                    {/* TOP BAR */}
+                    {/* =================================================
+                       TOP BAR
+                    ================================================== */}
 
                     <div className="nt-results-topbar">
                         <button
@@ -1393,14 +1452,7 @@ export default function ResultsPage() {
                             </span>
                         </button>
 
-                        <div
-                            className="nt-language-switch"
-                            aria-label={
-                                t(
-                                    "language"
-                                )
-                            }
-                        >
+                        <div className="nt-language-switch">
                             <button
                                 type="button"
                                 className={
@@ -1437,7 +1489,9 @@ export default function ResultsPage() {
                         </div>
                     </div>
 
-                    {/* HEADER */}
+                    {/* =================================================
+                       HEADER
+                    ================================================== */}
 
                     <header className="nt-results-header">
                         <div className="nt-results-eyebrow">
@@ -1475,7 +1529,9 @@ export default function ResultsPage() {
                         </p>
                     </header>
 
-                    {/* SEARCH SUMMARY */}
+                    {/* =================================================
+                       SEARCH SUMMARY
+                    ================================================== */}
 
                     <section className="nt-results-summary">
                         <div className="nt-results-summary-item">
@@ -1494,6 +1550,9 @@ export default function ResultsPage() {
 
                                 <strong>
                                     {search.locationText ||
+                                        search
+                                            ?.searchMeta
+                                            ?.locationText ||
                                         t(
                                             "currentLocation"
                                         )}
@@ -1544,16 +1603,8 @@ export default function ResultsPage() {
                                 </span>
 
                                 <strong>
-                                    {Number(
-                                        search.people
-                                    ) ===
-                                        1
-                                        ? t(
-                                            "onePerson"
-                                        )
-                                        : `${search.people} ${t(
-                                            "people"
-                                        )}`}
+                                    {search.people ||
+                                        1}
                                 </strong>
                             </div>
                         </div>
@@ -1581,7 +1632,9 @@ export default function ResultsPage() {
                         </div>
                     </section>
 
-                    {/* TOOLBAR */}
+                    {/* =================================================
+                       TOOLBAR
+                    ================================================== */}
 
                     <div className="nt-results-toolbar">
                         <div>
@@ -1654,7 +1707,7 @@ export default function ResultsPage() {
                     </div>
 
                     {/* =================================================
-                       LIST
+                       LIST VIEW
                     ================================================== */}
 
                     {view ===
@@ -1721,7 +1774,9 @@ export default function ResultsPage() {
                                 )
                             )}
 
-                            {/* ALTERNATIVES */}
+                            {/* =================================================
+                               FARTHER OPTIONS
+                            ================================================== */}
 
                             {alternatives.length >
                                 0 && (
@@ -1731,40 +1786,27 @@ export default function ResultsPage() {
                                                 "30px",
                                         }}
                                     >
-                                        <div
+                                        <h2>
+                                            {language ===
+                                                "fr"
+                                                ? "Autres options à proximité"
+                                                : "Other nearby options"}
+                                        </h2>
+
+                                        <p
                                             style={{
-                                                marginBottom:
-                                                    "14px",
+                                                color:
+                                                    "var(--nt-muted)",
+
+                                                fontSize:
+                                                    "0.86rem",
                                             }}
                                         >
-                                            <h2
-                                                style={{
-                                                    margin:
-                                                        0,
-                                                }}
-                                            >
-                                                {language ===
-                                                    "fr"
-                                                    ? "Autres options à proximité"
-                                                    : "Other nearby options"}
-                                            </h2>
-
-                                            <p
-                                                style={{
-                                                    margin:
-                                                        "6px 0 0",
-                                                    color:
-                                                        "var(--nt-muted)",
-                                                    fontSize:
-                                                        "0.86rem",
-                                                }}
-                                            >
-                                                {language ===
-                                                    "fr"
-                                                    ? "Ces endroits sont pertinents, mais leur prix dépasse votre budget."
-                                                    : "These places are relevant, but their price is above your budget."}
-                                            </p>
-                                        </div>
+                                            {language ===
+                                                "fr"
+                                                ? "Ces lieux sont un peu plus loin, mais restent dans votre zone de recherche."
+                                                : "These places are a little farther away, but still within your search area."}
+                                        </p>
 
                                         {alternatives.map(
                                             (
@@ -1781,28 +1823,29 @@ export default function ResultsPage() {
                                 )}
                         </section>
                     ) : (
-
                         /* =================================================
-                           MAP
+                           MAP VIEW
                         ================================================== */
 
                         <section className="nt-results-map">
 
-                            {/* FOLLOW LOCATION CONTROLS */}
+                            {/* =================================================
+                               FOLLOW LOCATION BUTTON
+                            ================================================== */}
 
                             <div
                                 style={{
                                     display:
                                         "flex",
 
-                                    justifyContent:
-                                        "space-between",
-
                                     alignItems:
                                         "center",
 
+                                    justifyContent:
+                                        "space-between",
+
                                     gap:
-                                        "10px",
+                                        "12px",
 
                                     flexWrap:
                                         "wrap",
@@ -1853,13 +1896,18 @@ export default function ResultsPage() {
                                             ? "Position en direct"
                                             : "Live location"}
 
-                                        {liveLocation.accuracy &&
-                                            ` · ±${Math.round(
+                                        {liveLocation.accuracy
+                                            ? ` · ±${Math.round(
                                                 liveLocation.accuracy
-                                            )} m`}
+                                            )} m`
+                                            : ""}
                                     </span>
                                 )}
                             </div>
+
+                            {/* =================================================
+                               LOCATION ERROR
+                            ================================================== */}
 
                             {locationError && (
                                 <div
@@ -1874,7 +1922,10 @@ export default function ResultsPage() {
                                             "12px",
 
                                         background:
-                                            "rgba(180, 80, 60, 0.08)",
+                                            "rgba(180,80,60,0.08)",
+
+                                        border:
+                                            "1px solid rgba(180,80,60,0.15)",
 
                                         fontSize:
                                             "0.82rem",
@@ -1886,31 +1937,114 @@ export default function ResultsPage() {
                                 </div>
                             )}
 
-                            <NiceThingsMap
-                                spots={[
-                                    ...(search?.results ||
-                                        []),
+                            {/* =================================================
+                               SELECTED DESTINATION
 
-                                    ...(search?.alternatives ||
-                                        []),
-                                ]}
+                               This makes it obvious that the map is
+                               routing to the place the user selected.
+                            ================================================== */}
+
+                            {selectedMapSpot && (
+                                <div
+                                    style={{
+                                        marginBottom:
+                                            "12px",
+
+                                        padding:
+                                            "12px 14px",
+
+                                        borderRadius:
+                                            "14px",
+
+                                        background:
+                                            "rgba(240,125,40,0.08)",
+
+                                        border:
+                                            "1px solid rgba(240,125,40,0.18)",
+                                    }}
+                                >
+                                    <strong>
+                                        {language ===
+                                            "fr"
+                                            ? "Destination sélectionnée"
+                                            : "Selected destination"}
+                                    </strong>
+
+                                    <div
+                                        style={{
+                                            marginTop:
+                                                "4px",
+
+                                            fontSize:
+                                                "0.9rem",
+                                        }}
+                                    >
+                                        {
+                                            selectedMapSpot.name
+                                        }
+                                    </div>
+
+                                    <div
+                                        style={{
+                                            marginTop:
+                                                "5px",
+
+                                            fontSize:
+                                                "0.78rem",
+
+                                            color:
+                                                "var(--nt-muted)",
+                                        }}
+                                    >
+                                        {language ===
+                                            "fr"
+                                            ? "Calcul du trajet routier vers ce lieu..."
+                                            : "Calculating the road route to this place..."}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* =================================================
+                               MAP
+
+                               IMPORTANT:
+                               selectedSpot is the destination.
+
+                               Only PRIMARY results are passed to the map.
+                               Far-away alternatives are deliberately excluded.
+                            ================================================== */}
+
+                            <NiceThingsMap
+                                spots={
+                                    results
+                                }
+
                                 userLocation={
                                     mapLocation
                                 }
+
                                 followUser={
                                     followingUser
                                 }
+
+                                selectedSpot={
+                                    selectedMapSpot
+                                }
+
                                 onSelectSpot={
-                                    spot =>
-                                        openSpot(
+                                    spot => {
+                                        setSelectedMapSpot(
                                             spot
-                                        )
+                                        );
+                                    }
                                 }
                             />
                         </section>
                     )}
 
-                    {/* NEW SEARCH */}
+                    {/* =================================================
+                       NEW SEARCH
+                    ================================================== */}
 
                     <div
                         style={{
@@ -1938,13 +2072,15 @@ export default function ResultsPage() {
                                 }
                             />
 
-                            <span>
-                                {t(
-                                    "newSearch"
-                                )}
-                            </span>
+                            {t(
+                                "newSearch"
+                            )}
                         </button>
                     </div>
+
+                    {/* =================================================
+                       ACCESS STATUS
+                    ================================================== */}
 
                     {search.accessExpiresAt && (
                         <div

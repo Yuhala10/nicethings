@@ -62,27 +62,34 @@ const defaultIcon = L.icon({
 
 const userIcon = L.divIcon({
     className:
-        "nicethings-user-location-marker",
+        "nt-user-location-marker",
 
     html: `
-        <div class="nicethings-user-location-dot">
-            <div class="nicethings-user-location-pulse"></div>
-        </div>
+        <div
+            style="
+                width:18px;
+                height:18px;
+                border-radius:50%;
+                background:#f97316;
+                border:4px solid white;
+                box-shadow:0 2px 10px rgba(0,0,0,.35);
+            "
+        ></div>
     `,
 
     iconSize: [
-        28,
-        28,
+        18,
+        18,
     ],
 
     iconAnchor: [
-        14,
-        14,
+        9,
+        9,
     ],
 });
 
 /* =========================================================
-   VALID COORDINATES
+   HELPERS
 ========================================================= */
 
 function isValidCoordinates(
@@ -96,50 +103,46 @@ function isValidCoordinates(
         Number.isFinite(
             Number(longitude)
         ) &&
-        Number(latitude) >= -90 &&
-        Number(latitude) <= 90 &&
-        Number(longitude) >= -180 &&
-        Number(longitude) <= 180
+        Number(latitude) >=
+        -90 &&
+        Number(latitude) <=
+        90 &&
+        Number(longitude) >=
+        -180 &&
+        Number(longitude) <=
+        180
     );
 }
-
-/* =========================================================
-   FORMAT DISTANCE
-========================================================= */
 
 function formatDistance(
     distanceKm
 ) {
-    const distance =
+    const value =
         Number(
             distanceKm
         );
 
     if (
         !Number.isFinite(
-            distance
+            value
         ) ||
-        distance < 0
+        value < 0
     ) {
-        return null;
+        return "—";
     }
 
     if (
-        distance < 1
+        value < 1
     ) {
         return `${Math.round(
-            distance * 1000
+            value * 1000
         )} m`;
     }
 
-    return `${distance.toFixed(
+    return `${value.toFixed(
         1
     )} km`;
 }
-
-/* =========================================================
-   FORMAT TIME
-========================================================= */
 
 function formatDuration(
     minutes
@@ -155,30 +158,26 @@ function formatDuration(
         ) ||
         value < 0
     ) {
-        return null;
+        return "—";
     }
 
-    const rounded =
-        Math.max(
-            1,
-            Math.round(
-                value
-            )
-        );
-
     if (
-        rounded < 60
+        value < 60
     ) {
-        return `${rounded} min`;
+        return `${Math.round(
+            value
+        )} min`;
     }
 
     const hours =
         Math.floor(
-            rounded / 60
+            value / 60
         );
 
     const remaining =
-        rounded % 60;
+        Math.round(
+            value % 60
+        );
 
     if (
         remaining ===
@@ -191,141 +190,22 @@ function formatDuration(
 }
 
 /* =========================================================
-   MAP CONTROLLER
+   MAP AUTO FIT
 ========================================================= */
 
-function MapController({
-    userLocation,
-    spots,
-    followUser,
-    routeCoordinates,
+function RouteFitBounds({
+    coordinates,
 }) {
     const map =
         useMap();
 
-    const points =
-        useMemo(() => {
-            const result =
-                [];
-
-            if (
-                userLocation &&
-                isValidCoordinates(
-                    userLocation.latitude,
-                    userLocation.longitude
-                )
-            ) {
-                result.push([
-                    Number(
-                        userLocation.latitude
-                    ),
-                    Number(
-                        userLocation.longitude
-                    ),
-                ]);
-            }
-
-            spots.forEach(
-                spot => {
-                    if (
-                        isValidCoordinates(
-                            spot?.latitude,
-                            spot?.longitude
-                        )
-                    ) {
-                        result.push([
-                            Number(
-                                spot.latitude
-                            ),
-                            Number(
-                                spot.longitude
-                            ),
-                        ]);
-                    }
-                }
-            );
-
-            return result;
-        }, [
-            userLocation,
-            spots,
-        ]);
-
-    /* =====================================================
-       FOLLOW USER
-
-       IMPORTANT:
-       When a route is visible, we DO NOT
-       recenter the map on the user.
-
-       Otherwise the route-fit operation gets
-       immediately overridden and the route can
-       appear to be missing/off-screen.
-    ====================================================== */
-
     useEffect(() => {
         if (
-            !followUser ||
-            !userLocation ||
-            routeCoordinates?.length >
-            1
-        ) {
-            return;
-        }
-
-        const latitude =
-            Number(
-                userLocation.latitude
-            );
-
-        const longitude =
-            Number(
-                userLocation.longitude
-            );
-
-        if (
-            !isValidCoordinates(
-                latitude,
-                longitude
-            )
-        ) {
-            return;
-        }
-
-        map.setView(
-            [
-                latitude,
-                longitude,
-            ],
-            Math.max(
-                map.getZoom(),
-                15
-            ),
-            {
-                animate:
-                    true,
-            }
-        );
-    }, [
-        map,
-        userLocation,
-        followUser,
-        routeCoordinates,
-    ]);
-
-    /* =====================================================
-       FIT ENTIRE ROUTE
-
-       This is the important part.
-
-       We show the complete road route from
-       the user to the selected place.
-    ====================================================== */
-
-    useEffect(() => {
-        if (
-            !routeCoordinates ||
-            routeCoordinates.length <
+            !map ||
+            !Array.isArray(
+                coordinates
+            ) ||
+            coordinates.length <
             2
         ) {
             return;
@@ -333,104 +213,84 @@ function MapController({
 
         const bounds =
             L.latLngBounds(
-                routeCoordinates
+                coordinates
             );
 
-        /*
-         * Make sure Leaflet knows the container
-         * has its correct dimensions.
-         */
-
-        map.invalidateSize(
-            false
-        );
-
-        /*
-         * Small delay allows the map to finish
-         * rendering before fitting the route.
-         */
-
-        const timer =
-            setTimeout(() => {
-                map.fitBounds(
-                    bounds,
-                    {
-                        paddingTopLeft: [
-                            50,
-                            110,
-                        ],
-
-                        paddingBottomRight: [
-                            50,
-                            70,
-                        ],
-
-                        maxZoom: 17,
-
-                        animate:
-                            true,
-                    }
-                );
-            }, 100);
-
-        return () =>
-            clearTimeout(
-                timer
-            );
-    }, [
-        map,
-        routeCoordinates,
-    ]);
-
-    /* =====================================================
-       NORMAL MAP FIT
-
-       Only used when there is NO route.
-    ====================================================== */
-
-    useEffect(() => {
         if (
-            followUser ||
-            routeCoordinates?.length >
-            1 ||
-            !points.length
+            !bounds.isValid()
         ) {
             return;
         }
-
-        if (
-            points.length ===
-            1
-        ) {
-            map.setView(
-                points[0],
-                14
-            );
-
-            return;
-        }
-
-        const bounds =
-            L.latLngBounds(
-                points
-            );
 
         map.fitBounds(
             bounds,
             {
                 padding: [
-                    50,
-                    50,
+                    45,
+                    45,
                 ],
 
-                maxZoom: 15,
+                maxZoom:
+                    17,
+
+                animate:
+                    true,
             }
         );
     }, [
         map,
-        points,
-        followUser,
-        routeCoordinates,
+        coordinates,
+    ]);
+
+    return null;
+}
+
+/* =========================================================
+   FOLLOW USER
+========================================================= */
+
+function FollowUser({
+    userLocation,
+    enabled,
+}) {
+    const map =
+        useMap();
+
+    useEffect(() => {
+        if (
+            !enabled ||
+            !userLocation ||
+            !isValidCoordinates(
+                userLocation.latitude,
+                userLocation.longitude
+            )
+        ) {
+            return;
+        }
+
+        map.setView(
+            [
+                Number(
+                    userLocation.latitude
+                ),
+                Number(
+                    userLocation.longitude
+                ),
+            ],
+            map.getZoom() <
+                15
+                ? 15
+                : map.getZoom(),
+            {
+                animate:
+                    true,
+            }
+        );
+    }, [
+        enabled,
+        userLocation?.latitude,
+        userLocation?.longitude,
+        map,
     ]);
 
     return null;
@@ -445,31 +305,50 @@ export default function NiceThingsMap({
     userLocation = null,
     onSelectSpot,
     followUser = false,
+
+    /*
+     * Destination selected from results.js.
+     *
+     * When View on map is pressed, ResultsPage passes
+     * the selected place here.
+     */
+    selectedSpot:
+    externalSelectedSpot = null,
 }) {
     const [
         selectedSpot,
         setSelectedSpot,
-    ] = useState(null);
+    ] = useState(
+        null
+    );
 
     const [
         routeCoordinates,
         setRouteCoordinates,
-    ] = useState([]);
+    ] = useState(
+        []
+    );
 
     const [
         routeInfo,
         setRouteInfo,
-    ] = useState(null);
+    ] = useState(
+        null
+    );
 
     const [
         routeLoading,
         setRouteLoading,
-    ] = useState(false);
+    ] = useState(
+        false
+    );
 
     const [
         routeError,
         setRouteError,
-    ] = useState("");
+    ] = useState(
+        ""
+    );
 
     const validSpots =
         spots.filter(
@@ -552,13 +431,6 @@ export default function NiceThingsMap({
             ""
         );
 
-        /*
-         * Don't immediately clear the existing
-         * route during a GPS refresh.
-         *
-         * This prevents visual flickering.
-         */
-
         try {
             const params =
                 new URLSearchParams({
@@ -603,7 +475,8 @@ export default function NiceThingsMap({
                 !data?.success ||
                 !data?.geometry
                     ?.coordinates ||
-                data.geometry.coordinates
+                data.geometry
+                    .coordinates
                     .length <
                 2
             ) {
@@ -710,14 +583,64 @@ export default function NiceThingsMap({
     }
 
     /* =====================================================
-       CLOSE ROUTE
+       EXTERNAL SELECTED SPOT
+
+       ResultsPage selects a place through
+       "View on map".
+
+       The route is then calculated automatically.
+    ====================================================== */
+
+    useEffect(() => {
+        if (
+            !externalSelectedSpot
+        ) {
+            return;
+        }
+
+        if (
+            !userLocation
+        ) {
+            setSelectedSpot(
+                externalSelectedSpot
+            );
+
+            setRouteError(
+                "Your current location is required to calculate a road route."
+            );
+
+            return;
+        }
+
+        if (
+            selectedSpot?.id ===
+            externalSelectedSpot?.id &&
+            routeCoordinates.length >
+            1
+        ) {
+            return;
+        }
+
+        setSelectedSpot(
+            externalSelectedSpot
+        );
+
+        calculateRoute(
+            externalSelectedSpot
+        );
+
+        // calculateRoute is intentionally omitted.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        externalSelectedSpot?.id,
+        userLocation?.latitude,
+        userLocation?.longitude,
+    ]);
+    /* =====================================================
+       CLEAR ROUTE
     ====================================================== */
 
     function clearRoute() {
-        setSelectedSpot(
-            null
-        );
-
         setRouteCoordinates(
             []
         );
@@ -729,27 +652,85 @@ export default function NiceThingsMap({
         setRouteError(
             ""
         );
+
+        setRouteLoading(
+            false
+        );
     }
 
     /* =====================================================
-       GPS ROUTE REFRESH
+       SELECT SPOT
+    ====================================================== */
 
-       Only refresh after the user has moved
-       enough to make the old route stale.
+    function handleSelectSpot(
+        spot
+    ) {
+        if (
+            !spot
+        ) {
+            return;
+        }
 
-       We don't route on every tiny GPS update.
+        setSelectedSpot(
+            spot
+        );
+
+        if (
+            typeof onSelectSpot ===
+            "function"
+        ) {
+            onSelectSpot(
+                spot
+            );
+        }
+
+        /*
+         * Automatically calculate the road route
+         * when a user selects a place directly
+         * from the map.
+         */
+        if (
+            userLocation &&
+            isValidCoordinates(
+                userLocation.latitude,
+                userLocation.longitude
+            ) &&
+            isValidCoordinates(
+                spot.latitude,
+                spot.longitude
+            )
+        ) {
+            calculateRoute(
+                spot
+            );
+        } else {
+            setRouteError(
+                "Your current location is required to show the road route."
+            );
+        }
+    }
+
+    /* =====================================================
+       FOLLOWING USER / ROUTE REFRESH
+
+       When the user's live GPS moves approximately
+       50 metres or more, refresh the road route.
+
+       This keeps the route useful while travelling.
     ====================================================== */
 
     const [
         lastRoutedLocation,
         setLastRoutedLocation,
-    ] = useState(null);
+    ] = useState(
+        null
+    );
 
-    function calculateStraightDistanceKm(
+    function distanceBetweenPoints(
         lat1,
-        lng1,
+        lon1,
         lat2,
-        lng2
+        lon2
     ) {
         const earthRadius =
             6371;
@@ -766,13 +747,13 @@ export default function NiceThingsMap({
             Math.PI /
             180;
 
-        const dLng =
+        const dLon =
             (
                 Number(
-                    lng2
+                    lon2
                 ) -
                 Number(
-                    lng1
+                    lon1
                 )
             ) *
             Math.PI /
@@ -798,12 +779,11 @@ export default function NiceThingsMap({
                 180
             ) *
             Math.sin(
-                dLng / 2
+                dLon / 2
             ) **
             2;
 
-        return (
-            earthRadius *
+        const c =
             2 *
             Math.atan2(
                 Math.sqrt(
@@ -812,12 +792,17 @@ export default function NiceThingsMap({
                 Math.sqrt(
                     1 - a
                 )
-            )
+            );
+
+        return (
+            earthRadius *
+            c
         );
     }
 
     useEffect(() => {
         if (
+            !followUser ||
             !selectedSpot ||
             !userLocation
         ) {
@@ -828,15 +813,18 @@ export default function NiceThingsMap({
             !isValidCoordinates(
                 userLocation.latitude,
                 userLocation.longitude
+            ) ||
+            !isValidCoordinates(
+                selectedSpot.latitude,
+                selectedSpot.longitude
             )
         ) {
             return;
         }
 
         /*
-         * First location after route creation.
+         * First GPS position while following.
          */
-
         if (
             !lastRoutedLocation
         ) {
@@ -852,11 +840,15 @@ export default function NiceThingsMap({
                     ),
             });
 
+            calculateRoute(
+                selectedSpot
+            );
+
             return;
         }
 
         const movedKm =
-            calculateStraightDistanceKm(
+            distanceBetweenPoints(
                 lastRoutedLocation.latitude,
                 lastRoutedLocation.longitude,
                 userLocation.latitude,
@@ -864,77 +856,145 @@ export default function NiceThingsMap({
             );
 
         /*
-         * Recalculate only after approximately
-         * 50 metres of movement.
+         * Recalculate after approximately 50 metres.
          */
-
         if (
-            movedKm <
+            movedKm >=
             0.05
         ) {
-            return;
+            setLastRoutedLocation({
+                latitude:
+                    Number(
+                        userLocation.latitude
+                    ),
+
+                longitude:
+                    Number(
+                        userLocation.longitude
+                    ),
+            });
+
+            calculateRoute(
+                selectedSpot
+            );
         }
 
-        const timer =
-            setTimeout(
-                async () => {
-                    await calculateRoute(
-                        selectedSpot
-                    );
-
-                    setLastRoutedLocation({
-                        latitude:
-                            Number(
-                                userLocation.latitude
-                            ),
-
-                        longitude:
-                            Number(
-                                userLocation.longitude
-                            ),
-                    });
-                },
-                800
-            );
-
-        return () =>
-            clearTimeout(
-                timer
-            );
-
-        // calculateRoute intentionally omitted
-        // because it is recreated on render.
+        // calculateRoute intentionally omitted.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
+        followUser,
+        selectedSpot?.id,
         userLocation?.latitude,
         userLocation?.longitude,
-        selectedSpot?.id,
+        lastRoutedLocation,
     ]);
+
+    /* =====================================================
+       MAP CENTER
+    ====================================================== */
+
+    const mapCenter =
+        useMemo(() => {
+            if (
+                userLocation &&
+                isValidCoordinates(
+                    userLocation.latitude,
+                    userLocation.longitude
+                )
+            ) {
+                return [
+                    Number(
+                        userLocation.latitude
+                    ),
+
+                    Number(
+                        userLocation.longitude
+                    ),
+                ];
+            }
+
+            if (
+                selectedSpot &&
+                isValidCoordinates(
+                    selectedSpot.latitude,
+                    selectedSpot.longitude
+                )
+            ) {
+                return [
+                    Number(
+                        selectedSpot.latitude
+                    ),
+
+                    Number(
+                        selectedSpot.longitude
+                    ),
+                ];
+            }
+
+            if (
+                validSpots.length >
+                0
+            ) {
+                return [
+                    Number(
+                        validSpots[0]
+                            .latitude
+                    ),
+
+                    Number(
+                        validSpots[0]
+                            .longitude
+                    ),
+                ];
+            }
+
+            return defaultCenter;
+        }, [
+            userLocation,
+            selectedSpot,
+            validSpots,
+        ]);
+
+    /* =====================================================
+       ROUTE DISPLAY
+
+       Outer dark line makes the route visible against
+       any map background.
+
+       Inner orange line makes it immediately obvious
+       which road the user should follow.
+    ====================================================== */
+
+    const hasRoute =
+        Array.isArray(
+            routeCoordinates
+        ) &&
+        routeCoordinates.length >=
+        2;
 
     /* =====================================================
        GOOGLE MAPS FALLBACK
     ====================================================== */
 
-    function openGoogleMaps(
-        spot
-    ) {
+    function openGoogleMaps() {
         if (
-            !spot ||
+            !selectedSpot ||
             !isValidCoordinates(
-                spot.latitude,
-                spot.longitude
+                selectedSpot.latitude,
+                selectedSpot.longitude
             )
         ) {
             return;
         }
 
         const destination =
-            `${spot.latitude},${spot.longitude}`;
-
-        let url =
-            `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-                destination
+            `${Number(
+                selectedSpot.latitude
+            )},${Number(
+                selectedSpot.longitude
             )}`;
+
+        let url;
 
         if (
             userLocation &&
@@ -944,12 +1004,23 @@ export default function NiceThingsMap({
             )
         ) {
             const origin =
-                `${userLocation.latitude},${userLocation.longitude}`;
-
-            url +=
-                `&origin=${encodeURIComponent(
-                    origin
+                `${Number(
+                    userLocation.latitude
+                )},${Number(
+                    userLocation.longitude
                 )}`;
+
+            url =
+                `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
+                    origin
+                )}&destination=${encodeURIComponent(
+                    destination
+                )}&travelmode=driving`;
+        } else {
+            url =
+                `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+                    destination
+                )}&travelmode=driving`;
         }
 
         window.open(
@@ -960,40 +1031,36 @@ export default function NiceThingsMap({
     }
 
     /* =====================================================
-       RENDER
+       MAP UI
     ====================================================== */
 
     return (
         <div
-            className="nicethings-map-wrapper"
+            className="nt-map-wrapper"
             style={{
-                width:
-                    "100%",
-
-                height:
-                    "min(70vh, 650px)",
-
-                minHeight:
-                    "480px",
-
-                borderRadius:
-                    "24px",
-
-                overflow:
-                    "hidden",
-
                 position:
                     "relative",
 
-                background:
-                    "#eef1f3",
+                width:
+                    "100%",
+
+                minHeight:
+                    "520px",
+
+                borderRadius:
+                    "20px",
+
+                overflow:
+                    "hidden",
             }}
         >
             <MapContainer
                 center={
-                    defaultCenter
+                    mapCenter
                 }
-                zoom={6}
+                zoom={
+                    14
+                }
                 scrollWheelZoom={
                     true
                 }
@@ -1002,31 +1069,44 @@ export default function NiceThingsMap({
                         "100%",
 
                     height:
-                        "100%",
+                        "520px",
+
+                    minHeight:
+                        "520px",
                 }}
             >
                 <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    attribution='&copy; OpenStreetMap contributors'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
 
-                <MapController
+                {/* =================================================
+                   KEEP USER CENTERED WHEN FOLLOWING
+                ================================================== */}
+
+                <FollowUser
                     userLocation={
                         userLocation
                     }
-                    spots={
-                        validSpots
-                    }
-                    followUser={
+                    enabled={
                         followUser
-                    }
-                    routeCoordinates={
-                        routeCoordinates
                     }
                 />
 
                 {/* =================================================
-                    USER
+                   FIT COMPLETE ROAD ROUTE
+                ================================================== */}
+
+                {hasRoute && (
+                    <RouteFitBounds
+                        coordinates={
+                            routeCoordinates
+                        }
+                    />
+                )}
+
+                {/* =================================================
+                   USER LOCATION
                 ================================================== */}
 
                 {userLocation &&
@@ -1039,6 +1119,7 @@ export default function NiceThingsMap({
                                 Number(
                                     userLocation.latitude
                                 ),
+
                                 Number(
                                     userLocation.longitude
                                 ),
@@ -1046,113 +1127,41 @@ export default function NiceThingsMap({
                             icon={
                                 userIcon
                             }
-                            zIndexOffset={
-                                1000
-                            }
                         >
                             <Popup>
                                 <strong>
                                     You are here
                                 </strong>
+
+                                {userLocation.accuracy && (
+                                    <div
+                                        style={{
+                                            marginTop:
+                                                "4px",
+
+                                            fontSize:
+                                                "12px",
+                                        }}
+                                    >
+                                        Accuracy:
+                                        {" "}
+                                        ±
+                                        {Math.round(
+                                            userLocation.accuracy
+                                        )}
+                                        m
+                                    </div>
+                                )}
                             </Popup>
                         </Marker>
                     )}
 
                 {/* =================================================
-                    ROUTE CASING
-
-                    Thick dark casing makes the road route
-                    visible even on bright map tiles.
-                ================================================== */}
-
-                {routeCoordinates.length >
-                    1 && (
-                        <>
-                            <Polyline
-                                positions={
-                                    routeCoordinates
-                                }
-                                pathOptions={{
-                                    color:
-                                        "#111827",
-
-                                    weight:
-                                        11,
-
-                                    opacity:
-                                        0.85,
-
-                                    lineCap:
-                                        "round",
-
-                                    lineJoin:
-                                        "round",
-                                }}
-                                interactive={
-                                    false
-                                }
-                            />
-
-                            <Polyline
-                                positions={
-                                    routeCoordinates
-                                }
-                                pathOptions={{
-                                    color:
-                                        "#f97316",
-
-                                    weight:
-                                        7,
-
-                                    opacity:
-                                        1,
-
-                                    lineCap:
-                                        "round",
-
-                                    lineJoin:
-                                        "round",
-                                }}
-                                interactive={
-                                    false
-                                }
-                            />
-                        </>
-                    )}
-
-                {/* =================================================
-                    PLACE MARKERS
+                   PLACE MARKERS
                 ================================================== */}
 
                 {validSpots.map(
                     spot => {
-                        const latitude =
-                            Number(
-                                spot.latitude
-                            );
-
-                        const longitude =
-                            Number(
-                                spot.longitude
-                            );
-
-                        const distance =
-                            formatDistance(
-                                spot?.distanceKm
-                            );
-
-                        const matchScore =
-                            Number(
-                                spot
-                                    ?.match
-                                    ?.score
-                            );
-
-                        const budgetStatus =
-                            spot
-                                ?.match
-                                ?.budgetStatus;
-
                         const isSelected =
                             selectedSpot?.id ===
                             spot.id;
@@ -1163,319 +1172,124 @@ export default function NiceThingsMap({
                                     spot.id
                                 }
                                 position={[
-                                    latitude,
-                                    longitude,
+                                    Number(
+                                        spot.latitude
+                                    ),
+
+                                    Number(
+                                        spot.longitude
+                                    ),
                                 ]}
                                 icon={
                                     defaultIcon
                                 }
-                                zIndexOffset={
-                                    isSelected
-                                        ? 1000
-                                        : 0
-                                }
+                                eventHandlers={{
+                                    click:
+                                        () =>
+                                            handleSelectSpot(
+                                                spot
+                                            ),
+                                }}
                             >
                                 <Popup>
                                     <div
                                         style={{
                                             minWidth:
-                                                "220px",
+                                                "180px",
                                         }}
                                     >
-                                        <strong
-                                            style={{
-                                                display:
-                                                    "block",
-
-                                                fontSize:
-                                                    "16px",
-
-                                                marginBottom:
-                                                    "6px",
-                                            }}
-                                        >
+                                        <strong>
                                             {
                                                 spot.name
                                             }
                                         </strong>
 
-                                        {spot.category && (
+                                        {spot.neighborhood && (
                                             <div
                                                 style={{
-                                                    fontSize:
-                                                        "13px",
-
-                                                    marginBottom:
-                                                        "6px",
-                                                }}
-                                            >
-                                                {
-                                                    spot.category
-                                                }
-                                            </div>
-                                        )}
-
-                                        {distance && (
-                                            <div
-                                                style={{
-                                                    fontSize:
-                                                        "13px",
-
-                                                    marginBottom:
+                                                    marginTop:
                                                         "5px",
+
+                                                    fontSize:
+                                                        "12px",
                                                 }}
                                             >
-                                                📍{" "}
+                                                <MapPin
+                                                    size={
+                                                        12
+                                                    }
+                                                />{" "}
                                                 {
-                                                    distance
-                                                }{" "}
-                                                away
+                                                    spot.neighborhood
+                                                }
                                             </div>
                                         )}
 
-                                        {Number.isFinite(
-                                            matchScore
-                                        ) && (
+                                        {spot.distanceKm !==
+                                            undefined &&
+                                            spot.distanceKm !==
+                                            null && (
                                                 <div
                                                     style={{
-                                                        fontSize:
-                                                            "13px",
-
-                                                        fontWeight:
-                                                            700,
-
-                                                        marginBottom:
+                                                        marginTop:
                                                             "5px",
-                                                    }}
-                                                >
-                                                    ✨{" "}
-                                                    {Math.round(
-                                                        matchScore
-                                                    )}
-                                                    % match
-                                                </div>
-                                            )}
 
-                                        {budgetStatus ===
-                                            "WITHIN_BUDGET" && (
-                                                <div
-                                                    style={{
                                                         fontSize:
                                                             "12px",
-
-                                                        marginBottom:
-                                                            "10px",
                                                     }}
                                                 >
-                                                    ✓ Within your budget
-                                                </div>
-                                            )}
-
-                                        {budgetStatus ===
-                                            "NEAR_BUDGET" && (
-                                                <div
-                                                    style={{
-                                                        fontSize:
-                                                            "12px",
-
-                                                        marginBottom:
-                                                            "10px",
-                                                    }}
-                                                >
-                                                    Close to your budget
-                                                </div>
-                                            )}
-
-                                        {budgetStatus ===
-                                            "ABOVE_BUDGET" && (
-                                                <div
-                                                    style={{
-                                                        fontSize:
-                                                            "12px",
-
-                                                        marginBottom:
-                                                            "10px",
-                                                    }}
-                                                >
-                                                    ⚠ Above your budget
-                                                </div>
-                                            )}
-
-                                        <div
-                                            style={{
-                                                display:
-                                                    "flex",
-
-                                                gap:
-                                                    "7px",
-
-                                                flexWrap:
-                                                    "wrap",
-                                            }}
-                                        >
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setSelectedSpot(
-                                                        spot
-                                                    );
-
-                                                    if (
-                                                        onSelectSpot
-                                                    ) {
-                                                        onSelectSpot(
-                                                            spot
-                                                        );
+                                                    {
+                                                        formatDistance(
+                                                            spot.distanceKm
+                                                        )
                                                     }
-                                                }}
-                                                style={{
-                                                    border:
-                                                        "none",
-
-                                                    borderRadius:
-                                                        "9px",
-
-                                                    padding:
-                                                        "8px 10px",
-
-                                                    cursor:
-                                                        "pointer",
-                                                }}
-                                            >
-                                                View place
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    calculateRoute(
-                                                        spot
-                                                    )
-                                                }
-                                                disabled={
-                                                    routeLoading &&
-                                                    isSelected
-                                                }
-                                                style={{
-                                                    border:
-                                                        "none",
-
-                                                    borderRadius:
-                                                        "9px",
-
-                                                    padding:
-                                                        "8px 10px",
-
-                                                    cursor:
-                                                        "pointer",
-
-                                                    fontWeight:
-                                                        700,
-                                                }}
-                                            >
-                                                <Navigation
-                                                    size={
-                                                        14
-                                                    }
-                                                    style={{
-                                                        verticalAlign:
-                                                            "middle",
-
-                                                        marginRight:
-                                                            "4px",
-                                                    }}
-                                                />
-
-                                                {routeLoading &&
-                                                    isSelected
-                                                    ? "Calculating..."
-                                                    : "Route here"}
-                                            </button>
-                                        </div>
-
-                                        {isSelected &&
-                                            routeInfo && (
-                                                <div
-                                                    style={{
-                                                        marginTop:
-                                                            "10px",
-
-                                                        paddingTop:
-                                                            "10px",
-
-                                                        borderTop:
-                                                            "1px solid rgba(0,0,0,0.08)",
-
-                                                        fontSize:
-                                                            "12px",
-                                                    }}
-                                                >
-                                                    <strong>
-                                                        Road route
-                                                    </strong>
-
-                                                    <div>
-                                                        📏{" "}
-                                                        {formatDistance(
-                                                            routeInfo.distanceKm
-                                                        )}
-                                                    </div>
-
-                                                    <div>
-                                                        ⏱️{" "}
-                                                        {formatDuration(
-                                                            routeInfo.durationMinutes
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                        {isSelected &&
-                                            routeError && (
-                                                <div
-                                                    style={{
-                                                        marginTop:
-                                                            "10px",
-
-                                                        fontSize:
-                                                            "12px",
-
-                                                        lineHeight:
-                                                            1.4,
-                                                    }}
-                                                >
-                                                    {routeError}
                                                 </div>
                                             )}
 
                                         <button
                                             type="button"
                                             onClick={() =>
-                                                openGoogleMaps(
+                                                handleSelectSpot(
                                                     spot
                                                 )
                                             }
                                             style={{
+                                                marginTop:
+                                                    "10px",
+
                                                 width:
                                                     "100%",
 
-                                                marginTop:
-                                                    "9px",
+                                                padding:
+                                                    "8px 10px",
 
                                                 border:
                                                     "none",
 
                                                 borderRadius:
-                                                    "9px",
-
-                                                padding:
-                                                    "8px 10px",
+                                                    "8px",
 
                                                 cursor:
                                                     "pointer",
+
+                                                background:
+                                                    "#f97316",
+
+                                                color:
+                                                    "white",
+
+                                                fontWeight:
+                                                    700,
                                             }}
                                         >
-                                            🧭 Open in Google Maps
+                                            <Route
+                                                size={
+                                                    14
+                                                }
+                                            />
+
+                                            {" "}
+                                            Route here
                                         </button>
                                     </div>
                                 </Popup>
@@ -1483,10 +1297,70 @@ export default function NiceThingsMap({
                         );
                     }
                 )}
-            </MapContainer>
 
+                {/* =================================================
+                   THICK ROAD ROUTE
+
+                   OUTER:
+                   11px dark casing
+
+                   INNER:
+                   7px orange route
+
+                   This creates a very visible route that
+                   can be followed on the map.
+                ================================================== */}
+
+                {hasRoute && (
+                    <>
+                        <Polyline
+                            positions={
+                                routeCoordinates
+                            }
+                            pathOptions={{
+                                color:
+                                    "#111827",
+
+                                weight:
+                                    11,
+
+                                opacity:
+                                    0.95,
+
+                                lineCap:
+                                    "round",
+
+                                lineJoin:
+                                    "round",
+                            }}
+                        />
+
+                        <Polyline
+                            positions={
+                                routeCoordinates
+                            }
+                            pathOptions={{
+                                color:
+                                    "#f97316",
+
+                                weight:
+                                    7,
+
+                                opacity:
+                                    1,
+
+                                lineCap:
+                                    "round",
+
+                                lineJoin:
+                                    "round",
+                            }}
+                        />
+                    </>
+                )}
+            </MapContainer>
             {/* =================================================
-                ROUTE INFORMATION
+               ROUTE INFORMATION PANEL
             ================================================== */}
 
             {selectedSpot && (
@@ -1508,22 +1382,22 @@ export default function NiceThingsMap({
                             1000,
 
                         maxWidth:
-                            "380px",
+                            "430px",
 
-                        background:
-                            "rgba(255,255,255,0.97)",
-
-                        backdropFilter:
-                            "blur(12px)",
+                        padding:
+                            "14px 16px",
 
                         borderRadius:
                             "16px",
 
-                        padding:
-                            "13px 15px",
+                        background:
+                            "rgba(255,255,255,0.96)",
 
                         boxShadow:
-                            "0 10px 30px rgba(0,0,0,0.16)",
+                            "0 6px 25px rgba(0,0,0,0.18)",
+
+                        backdropFilter:
+                            "blur(8px)",
                     }}
                 >
                     <div
@@ -1532,13 +1406,13 @@ export default function NiceThingsMap({
                                 "flex",
 
                             alignItems:
-                                "center",
+                                "flex-start",
 
                             justifyContent:
                                 "space-between",
 
                             gap:
-                                "10px",
+                                "12px",
                         }}
                     >
                         <div
@@ -1549,42 +1423,53 @@ export default function NiceThingsMap({
                         >
                             <div
                                 style={{
+                                    display:
+                                        "flex",
+
+                                    alignItems:
+                                        "center",
+
+                                    gap:
+                                        "7px",
+
                                     fontSize:
-                                        "11px",
+                                        "0.75rem",
+
+                                    fontWeight:
+                                        700,
+
+                                    color:
+                                        "#f97316",
 
                                     textTransform:
                                         "uppercase",
 
                                     letterSpacing:
-                                        "0.08em",
-
-                                    opacity:
-                                        0.6,
-
-                                    marginBottom:
-                                        "3px",
+                                        "0.04em",
                                 }}
                             >
                                 <Route
                                     size={
-                                        13
+                                        14
                                     }
-                                    style={{
-                                        verticalAlign:
-                                            "middle",
-
-                                        marginRight:
-                                            "4px",
-                                    }}
                                 />
 
-                                Road route
+                                Destination
                             </div>
 
-                            <strong
+                            <div
                                 style={{
-                                    display:
-                                        "block",
+                                    marginTop:
+                                        "4px",
+
+                                    fontSize:
+                                        "1rem",
+
+                                    fontWeight:
+                                        800,
+
+                                    color:
+                                        "#111827",
 
                                     overflow:
                                         "hidden",
@@ -1599,7 +1484,7 @@ export default function NiceThingsMap({
                                 {
                                     selectedSpot.name
                                 }
-                            </strong>
+                            </div>
                         </div>
 
                         <button
@@ -1607,131 +1492,330 @@ export default function NiceThingsMap({
                             onClick={
                                 clearRoute
                             }
-                            aria-label="Close route"
+                            aria-label="Clear route"
                             style={{
+                                width:
+                                    "32px",
+
+                                height:
+                                    "32px",
+
+                                flexShrink:
+                                    0,
+
+                                display:
+                                    "flex",
+
+                                alignItems:
+                                    "center",
+
+                                justifyContent:
+                                    "center",
+
                                 border:
                                     "none",
 
+                                borderRadius:
+                                    "50%",
+
                                 background:
-                                    "transparent",
+                                    "#f3f4f6",
+
+                                color:
+                                    "#374151",
 
                                 cursor:
                                     "pointer",
-
-                                padding:
-                                    "5px",
                             }}
                         >
                             <X
                                 size={
-                                    18
+                                    17
                                 }
                             />
                         </button>
                     </div>
 
+                    {/* =================================================
+                       ROUTE LOADING
+                    ================================================== */}
+
                     {routeLoading && (
                         <div
                             style={{
                                 marginTop:
-                                    "9px",
+                                    "10px",
+
+                                display:
+                                    "flex",
+
+                                alignItems:
+                                    "center",
+
+                                gap:
+                                    "8px",
 
                                 fontSize:
-                                    "12px",
+                                    "0.82rem",
+
+                                color:
+                                    "#4b5563",
                             }}
                         >
-                            🛣️ Finding the best road route...
+                            <span
+                                style={{
+                                    width:
+                                        "15px",
+
+                                    height:
+                                        "15px",
+
+                                    border:
+                                        "2px solid #d1d5db",
+
+                                    borderTopColor:
+                                        "#f97316",
+
+                                    borderRadius:
+                                        "50%",
+
+                                    display:
+                                        "inline-block",
+
+                                    animation:
+                                        "ntMapSpin 0.8s linear infinite",
+                                }}
+                            />
+
+                            Calculating road route...
                         </div>
                     )}
 
+                    {/* =================================================
+                       ROUTE INFORMATION
+                    ================================================== */}
+
                     {!routeLoading &&
+                        hasRoute &&
                         routeInfo && (
                             <div
                                 style={{
                                     display:
                                         "flex",
 
+                                    alignItems:
+                                        "center",
+
                                     gap:
-                                        "20px",
+                                        "8px",
+
+                                    flexWrap:
+                                        "wrap",
 
                                     marginTop:
                                         "10px",
-
-                                    fontSize:
-                                        "12px",
                                 }}
                             >
-                                <div>
-                                    <div
-                                        style={{
-                                            opacity:
-                                                0.6,
-                                        }}
-                                    >
-                                        Distance
-                                    </div>
+                                <div
+                                    style={{
+                                        display:
+                                            "flex",
 
-                                    <strong>
-                                        {formatDistance(
-                                            routeInfo.distanceKm
-                                        )}
-                                    </strong>
+                                        alignItems:
+                                            "center",
+
+                                        gap:
+                                            "5px",
+
+                                        padding:
+                                            "7px 9px",
+
+                                        borderRadius:
+                                            "9px",
+
+                                        background:
+                                            "#fff7ed",
+
+                                        color:
+                                            "#9a3412",
+
+                                        fontSize:
+                                            "0.78rem",
+
+                                        fontWeight:
+                                            700,
+                                    }}
+                                >
+                                    <Navigation
+                                        size={
+                                            14
+                                        }
+                                    />
+
+                                    {formatDistance(
+                                        routeInfo.distanceKm
+                                    )}
                                 </div>
 
-                                <div>
-                                    <div
-                                        style={{
-                                            opacity:
-                                                0.6,
-                                        }}
-                                    >
-                                        <Clock3
-                                            size={
-                                                12
-                                            }
-                                            style={{
-                                                verticalAlign:
-                                                    "middle",
+                                <div
+                                    style={{
+                                        display:
+                                            "flex",
 
-                                                marginRight:
-                                                    "3px",
-                                            }}
-                                        />
+                                        alignItems:
+                                            "center",
 
-                                        ETA
-                                    </div>
+                                        gap:
+                                            "5px",
 
-                                    <strong>
-                                        {formatDuration(
-                                            routeInfo.durationMinutes
-                                        )}
-                                    </strong>
+                                        padding:
+                                            "7px 9px",
+
+                                        borderRadius:
+                                            "9px",
+
+                                        background:
+                                            "#fff7ed",
+
+                                        color:
+                                            "#9a3412",
+
+                                        fontSize:
+                                            "0.78rem",
+
+                                        fontWeight:
+                                            700,
+                                    }}
+                                >
+                                    <Clock3
+                                        size={
+                                            14
+                                        }
+                                    />
+
+                                    {formatDuration(
+                                        routeInfo.durationMinutes
+                                    )}
                                 </div>
+
+                                <span
+                                    style={{
+                                        fontSize:
+                                            "0.74rem",
+
+                                        color:
+                                            "#6b7280",
+                                    }}
+                                >
+                                    Follow the orange road
+                                </span>
                             </div>
                         )}
+
+                    {/* =================================================
+                       ROUTE ERROR
+                    ================================================== */}
 
                     {!routeLoading &&
                         routeError && (
                             <div
                                 style={{
                                     marginTop:
+                                        "10px",
+
+                                    padding:
+                                        "9px 10px",
+
+                                    borderRadius:
                                         "9px",
 
+                                    background:
+                                        "#fef2f2",
+
+                                    color:
+                                        "#991b1b",
+
                                     fontSize:
-                                        "12px",
+                                        "0.78rem",
 
                                     lineHeight:
                                         1.4,
                                 }}
                             >
-                                {routeError}
+                                {
+                                    routeError
+                                }
                             </div>
                         )}
+
+                    {/* =================================================
+                       GOOGLE MAPS BUTTON
+                    ================================================== */}
+
+                    {selectedSpot && (
+                        <button
+                            type="button"
+                            onClick={
+                                openGoogleMaps
+                            }
+                            style={{
+                                marginTop:
+                                    "10px",
+
+                                width:
+                                    "100%",
+
+                                display:
+                                    "flex",
+
+                                alignItems:
+                                    "center",
+
+                                justifyContent:
+                                    "center",
+
+                                gap:
+                                    "7px",
+
+                                padding:
+                                    "9px 12px",
+
+                                border:
+                                    "1px solid #e5e7eb",
+
+                                borderRadius:
+                                    "10px",
+
+                                background:
+                                    "white",
+
+                                color:
+                                    "#111827",
+
+                                fontWeight:
+                                    700,
+
+                                fontSize:
+                                    "0.8rem",
+
+                                cursor:
+                                    "pointer",
+                            }}
+                        >
+                            <Navigation
+                                size={
+                                    15
+                                }
+                            />
+
+                            Open directions in Google Maps
+                        </button>
+                    )}
                 </div>
             )}
 
             {/* =================================================
-                LEGEND
+               MAP LEGEND
             ================================================== */}
 
             <div
@@ -1739,32 +1823,29 @@ export default function NiceThingsMap({
                     position:
                         "absolute",
 
-                    left:
-                        "14px",
-
                     bottom:
-                        "14px",
+                        "18px",
+
+                    left:
+                        "18px",
 
                     zIndex:
-                        1000,
+                        999,
+
+                    padding:
+                        "9px 11px",
+
+                    borderRadius:
+                        "10px",
 
                     background:
                         "rgba(255,255,255,0.94)",
 
-                    backdropFilter:
-                        "blur(10px)",
-
-                    borderRadius:
-                        "14px",
-
-                    padding:
-                        "10px 12px",
-
                     boxShadow:
-                        "0 8px 24px rgba(0,0,0,0.12)",
+                        "0 3px 12px rgba(0,0,0,0.15)",
 
                     fontSize:
-                        "12px",
+                        "0.72rem",
                 }}
             >
                 <div
@@ -1782,32 +1863,90 @@ export default function NiceThingsMap({
                             "5px",
                     }}
                 >
-                    <span className="nicethings-map-user-dot" />
+                    <span
+                        style={{
+                            width:
+                                "24px",
 
-                    Your location
-                </div>
+                            height:
+                                "7px",
 
-                <div
-                    style={{
-                        display:
-                            "flex",
+                            borderRadius:
+                                "20px",
 
-                        alignItems:
-                            "center",
+                            background:
+                                "#f97316",
 
-                        gap:
-                            "7px",
-                    }}
-                >
-                    <MapPin
-                        size={
-                            14
-                        }
+                            display:
+                                "inline-block",
+                        }}
                     />
 
-                    NiceThings places
+                    <span>
+                        Route
+                    </span>
                 </div>
+
+                {userLocation && (
+                    <div
+                        style={{
+                            display:
+                                "flex",
+
+                            alignItems:
+                                "center",
+
+                            gap:
+                                "7px",
+                        }}
+                    >
+                        <span
+                            style={{
+                                width:
+                                    "12px",
+
+                                height:
+                                    "12px",
+
+                                borderRadius:
+                                    "50%",
+
+                                background:
+                                    "#f97316",
+
+                                border:
+                                    "2px solid white",
+
+                                boxShadow:
+                                    "0 1px 4px rgba(0,0,0,.3)",
+
+                                display:
+                                    "inline-block",
+                            }}
+                        />
+
+                        <span>
+                            Your location
+                        </span>
+                    </div>
+                )}
             </div>
+
+            {/* =================================================
+               SPINNING ANIMATION
+            ================================================== */}
+
+            <style jsx>{`
+                @keyframes ntMapSpin {
+                    from {
+                        transform: rotate(0deg);
+                    }
+
+                    to {
+                        transform: rotate(360deg);
+                    }
+                }
+            `}</style>
         </div>
     );
 }

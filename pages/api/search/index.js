@@ -1,22 +1,21 @@
 import supabaseAdmin from "../../../lib/supabaseAdmin";
-import { rankSpots } from "../../../lib/matching";
+import {
+    rankSpots,
+    MAX_MATCH_DISTANCE_KM,
+    PRIMARY_MATCH_DISTANCE_KM,
+} from "../../../lib/matching";
+
 import {
     isLaunchFree,
 } from "../../../lib/access";
+
 import {
     getAdminCookie,
     verifyAdminToken,
 } from "../../../lib/adminAuth";
 
 /* =========================================================
-   LOCATION SETTINGS
-========================================================= */
-
-const PRIMARY_RADIUS_KM = 1.0;
-const FALLBACK_RADIUS_KM = 1.5;
-
-/* =========================================================
-   VALID COORDINATES
+   LOCATION HELPERS
 ========================================================= */
 
 function isValidCoordinates(
@@ -39,34 +38,30 @@ function isValidCoordinates(
 
 /* =========================================================
    HAVERSINE DISTANCE
+
+   Returns REAL straight-line distance between
+   two coordinate pairs.
+
+   This is used for search filtering.
+
+   Road distance is handled separately by
+   the routing API.
 ========================================================= */
 
-function distanceBetweenCoordinates(
+function calculateDistanceKm(
     latitude1,
     longitude1,
     latitude2,
     longitude2
 ) {
-    const lat1 =
-        Number(latitude1);
-
-    const lon1 =
-        Number(longitude1);
-
-    const lat2 =
-        Number(latitude2);
-
-    const lon2 =
-        Number(longitude2);
-
     if (
         !isValidCoordinates(
-            lat1,
-            lon1
+            latitude1,
+            longitude1
         ) ||
         !isValidCoordinates(
-            lat2,
-            lon2
+            latitude2,
+            longitude2
         )
     ) {
         return null;
@@ -75,31 +70,40 @@ function distanceBetweenCoordinates(
     const earthRadiusKm =
         6371;
 
-    const degreesToRadians =
-        Math.PI / 180;
+    const lat1 =
+        Number(latitude1) *
+        Math.PI /
+        180;
 
-    const deltaLatitude =
-        (lat2 - lat1) *
-        degreesToRadians;
+    const lat2 =
+        Number(latitude2) *
+        Math.PI /
+        180;
 
-    const deltaLongitude =
-        (lon2 - lon1) *
-        degreesToRadians;
+    const deltaLat =
+        (
+            Number(latitude2) -
+            Number(latitude1)
+        ) *
+        Math.PI /
+        180;
+
+    const deltaLng =
+        (
+            Number(longitude2) -
+            Number(longitude1)
+        ) *
+        Math.PI /
+        180;
 
     const a =
         Math.sin(
-            deltaLatitude / 2
+            deltaLat / 2
         ) ** 2 +
-        Math.cos(
-            lat1 *
-            degreesToRadians
-        ) *
-        Math.cos(
-            lat2 *
-            degreesToRadians
-        ) *
+        Math.cos(lat1) *
+        Math.cos(lat2) *
         Math.sin(
-            deltaLongitude / 2
+            deltaLng / 2
         ) ** 2;
 
     const c =
@@ -110,27 +114,22 @@ function distanceBetweenCoordinates(
         );
 
     return (
-        earthRadiusKm * c
+        earthRadiusKm *
+        c
     );
 }
 
 /* =========================================================
-   GEOCODE MANUAL LOCATION
-========================================================= */
+   GEOCODE TYPED LOCATION
 
-/*
- * When a visitor types something such as:
- *
- *   Bonamoussadi
- *   Akwa
- *   Bali
- *   Makepe
- *
- * we try to turn that text into real coordinates.
- *
- * Nominatim / OpenStreetMap is used only when
- * the visitor did not already provide GPS coordinates.
- */
+   Example:
+
+   "Bonamoussadi"
+   "Makepe"
+   "Akwa"
+
+   becomes real coordinates.
+========================================================= */
 
 async function geocodeLocation(
     locationText
@@ -170,10 +169,11 @@ async function geocodeLocation(
                         "GET",
 
                     headers: {
-                        "User-Agent":
-                            "NiceThings/1.0 location discovery app",
-                        "Accept":
+                        Accept:
                             "application/json",
+
+                        "User-Agent":
+                            "NiceThings/1.0",
                     },
                 }
             );
@@ -182,7 +182,7 @@ async function geocodeLocation(
             !response.ok
         ) {
             console.error(
-                "Geocoding HTTP error:",
+                "Geocoding failed:",
                 response.status
             );
 
@@ -196,14 +196,15 @@ async function geocodeLocation(
             !Array.isArray(
                 data
             ) ||
-            data.length === 0
+            data.length ===
+            0
         ) {
             return null;
         }
 
         /*
-         * Prefer results that look like an actual
-         * neighbourhood / suburb / quarter / locality.
+         * Prefer places that represent
+         * actual local areas.
          */
 
         const preferred =
@@ -274,9 +275,11 @@ async function geocodeLocation(
             source:
                 "geocoded",
         };
-    } catch (error) {
+    } catch (
+    error
+    ) {
         console.error(
-            "Location geocoding error:",
+            "Geocoding error:",
             error
         );
 
@@ -285,106 +288,109 @@ async function geocodeLocation(
 }
 
 /* =========================================================
-   RADIUS FILTER
+   BUDGET CHECK
+
+   This is intentionally strict.
+
+   If a user supplies a budget, we prefer places
+   that can actually fit that budget.
+
+   A place whose MINIMUM price is already above
+   the user's total budget is not considered
+   affordable.
 ========================================================= */
 
-function filterByRadius(
-    rankedSpots,
-    latitude,
-    longitude,
-    radiusKm
+function isWithinBudget(
+    spot,
+    budget,
+    people
 ) {
+    const requestedBudget =
+        Number(
+            budget
+        );
+
     if (
-        !isValidCoordinates(
-            latitude,
-            longitude
-        )
+        !Number.isFinite(
+            requestedBudget
+        ) ||
+        requestedBudget <= 0
     ) {
-        return [];
+        return true;
     }
 
-    return rankedSpots.filter(
-        spot => {
-            const spotLatitude =
-                Number(
-                    spot?.latitude
-                );
+    const numberOfPeople =
+        Math.max(
+            Number(
+                people
+            ) || 1,
+            1
+        );
 
-            const spotLongitude =
-                Number(
-                    spot?.longitude
-                );
+    /*
+     * Your matching engine treats the submitted
+     * budget as a total budget and calculates a
+     * per-person budget.
+     */
 
-            if (
-                !isValidCoordinates(
-                    spotLatitude,
-                    spotLongitude
-                )
-            ) {
-                return false;
-            }
+    const budgetPerPerson =
+        requestedBudget /
+        numberOfPeople;
 
-            const distance =
-                distanceBetweenCoordinates(
-                    latitude,
-                    longitude,
-                    spotLatitude,
-                    spotLongitude
-                );
+    const minimum =
+        Number(
+            spot.minimum_price
+        );
 
-            if (
-                !Number.isFinite(
-                    distance
-                )
-            ) {
-                return false;
-            }
+    const average =
+        Number(
+            spot.average_price
+        );
 
-            /*
-             * Keep our own calculated distance authoritative.
-             * This protects the radius filter even if the
-             * matching engine has different distance handling.
-             */
+    const maximum =
+        Number(
+            spot.maximum_price
+        );
 
-            spot.match = {
-                ...(spot.match ||
-                    {}),
-                distanceKm:
-                    distance,
-            };
+    const lowestKnownPrice =
+        [
+            minimum,
+            average,
+            maximum,
+        ]
+            .filter(
+                value =>
+                    Number.isFinite(
+                        value
+                    ) &&
+                    value > 0
+            )
+            .sort(
+                (
+                    a,
+                    b
+                ) =>
+                    a - b
+            )[0];
 
-            return (
-                distance <=
-                radiusKm
-            );
-        }
+    if (
+        !Number.isFinite(
+            lowestKnownPrice
+        )
+    ) {
+        /*
+         * Unknown pricing is not automatically
+         * rejected. The matching engine will
+         * penalize it appropriately.
+         */
+
+        return true;
+    }
+
+    return (
+        lowestKnownPrice <=
+        budgetPerPerson
     );
-}
-
-/* =========================================================
-   FORMAT RESULT
-========================================================= */
-
-function formatSpot(
-    spot
-) {
-    return {
-        ...spot,
-
-        distanceKm:
-            spot.match
-                ?.distanceKm ??
-            null,
-
-        matchScore:
-            spot.match
-                ?.score ??
-            0,
-
-        match:
-            spot.match ||
-            null,
-    };
 }
 
 /* =========================================================
@@ -438,7 +444,7 @@ export default async function handler(
         }
 
         /* =====================================================
-           ADMIN ACCESS
+           ADMIN
         ====================================================== */
 
         const adminToken =
@@ -452,7 +458,7 @@ export default async function handler(
             );
 
         /* =====================================================
-           LAUNCH ACCESS
+           ACCESS
         ====================================================== */
 
         const launchFree =
@@ -539,6 +545,123 @@ export default async function handler(
         }
 
         /* =====================================================
+           INPUT NORMALIZATION
+        ====================================================== */
+
+        const numericBudget =
+            Number(
+                budget
+            );
+
+        const hasBudget =
+            Number.isFinite(
+                numericBudget
+            ) &&
+            numericBudget >
+            0;
+
+        const numericPeople =
+            Math.max(
+                Number(
+                    people
+                ) || 1,
+                1
+            );
+
+        const submittedLatitude =
+            Number(
+                latitude
+            );
+
+        const submittedLongitude =
+            Number(
+                longitude
+            );
+
+        const hasGps =
+            isValidCoordinates(
+                submittedLatitude,
+                submittedLongitude
+            );
+
+        /* =====================================================
+           RESOLVE LOCATION
+        ====================================================== */
+
+        let resolvedLatitude =
+            null;
+
+        let resolvedLongitude =
+            null;
+
+        let resolvedLocationText =
+            locationText ||
+            null;
+
+        let locationSource =
+            "none";
+
+        let locationResolution =
+            null;
+
+        /*
+         * GPS ALWAYS wins over typed text.
+         */
+
+        if (
+            hasGps
+        ) {
+            resolvedLatitude =
+                submittedLatitude;
+
+            resolvedLongitude =
+                submittedLongitude;
+
+            locationSource =
+                "gps";
+        }
+
+        /*
+         * If no GPS exists, try to understand
+         * the quarter/area the person typed.
+         */
+
+        else if (
+            locationText
+        ) {
+            const geocoded =
+                await geocodeLocation(
+                    locationText
+                );
+
+            if (
+                geocoded
+            ) {
+                resolvedLatitude =
+                    geocoded.latitude;
+
+                resolvedLongitude =
+                    geocoded.longitude;
+
+                resolvedLocationText =
+                    geocoded.displayName ||
+                    locationText;
+
+                locationSource =
+                    "geocoded";
+
+                locationResolution =
+                    geocoded;
+            }
+        }
+
+        const hasResolvedLocation =
+            isValidCoordinates(
+                resolvedLatitude,
+                resolvedLongitude
+            );
+
+        /* =====================================================
            GET APPROVED SPOTS
         ====================================================== */
 
@@ -587,7 +710,7 @@ export default async function handler(
             spotsError
         ) {
             console.error(
-                "Spots:",
+                "Spots error:",
                 spotsError
             );
 
@@ -603,318 +726,213 @@ export default async function handler(
         }
 
         /* =====================================================
-           SEARCH VALUES
-        ====================================================== */
-
-        const numericBudget =
-            Number(
-                budget
-            );
-
-        const hasBudget =
-            Number.isFinite(
-                numericBudget
-            ) &&
-            numericBudget >
-            0;
-
-        const numericPeople =
-            Math.max(
-                Number(
-                    people
-                ) || 1,
-                1
-            );
-
-        /* =====================================================
-           RESOLVE SEARCH LOCATION
-        ====================================================== */
-
-        const submittedLatitude =
-            Number(
-                latitude
-            );
-
-        const submittedLongitude =
-            Number(
-                longitude
-            );
-
-        const hasGpsLocation =
-            isValidCoordinates(
-                submittedLatitude,
-                submittedLongitude
-            );
-
-        let resolvedLatitude =
-            hasGpsLocation
-                ? submittedLatitude
-                : null;
-
-        let resolvedLongitude =
-            hasGpsLocation
-                ? submittedLongitude
-                : null;
-
-        let resolvedLocationText =
-            locationText ||
-            null;
-
-        let locationSource =
-            hasGpsLocation
-                ? "gps"
-                : "none";
-
-        let locationResolution =
-            null;
-
-        /*
-         * If the visitor typed a quarter/location
-         * and did not provide GPS coordinates,
-         * resolve the location to coordinates.
-         */
-
-        if (
-            !hasGpsLocation &&
-            locationText
-        ) {
-            const geocoded =
-                await geocodeLocation(
-                    locationText
-                );
-
-            if (
-                geocoded
-            ) {
-                resolvedLatitude =
-                    geocoded.latitude;
-
-                resolvedLongitude =
-                    geocoded.longitude;
-
-                resolvedLocationText =
-                    geocoded.displayName ||
-                    locationText;
-
-                locationSource =
-                    "geocoded";
-
-                locationResolution =
-                    geocoded;
-            }
-        }
-
-        const hasResolvedLocation =
-            isValidCoordinates(
-                resolvedLatitude,
-                resolvedLongitude
-            );
-
-        /* =====================================================
-           SEARCH OPTIONS
-        ====================================================== */
-
-        const searchOptions = {
-            latitude:
-                hasResolvedLocation
-                    ? resolvedLatitude
-                    : null,
-
-            longitude:
-                hasResolvedLocation
-                    ? resolvedLongitude
-                    : null,
-
-            locationText:
-                resolvedLocationText,
-
-            budget:
-                hasBudget
-                    ? numericBudget
-                    : null,
-
-            people:
-                numericPeople,
-
-            category:
-                category ||
-                null,
-        };
-
-        /* =====================================================
-           INTELLIGENT RANKING
+           SCORE EVERYTHING
         ====================================================== */
 
         const ranked =
             rankSpots(
                 spots || [],
-                searchOptions
+                {
+                    latitude:
+                        hasResolvedLocation
+                            ? resolvedLatitude
+                            : null,
+
+                    longitude:
+                        hasResolvedLocation
+                            ? resolvedLongitude
+                            : null,
+
+                    locationText:
+                        resolvedLocationText,
+
+                    budget:
+                        hasBudget
+                            ? numericBudget
+                            : null,
+
+                    people:
+                        numericPeople,
+
+                    category:
+                        category ||
+                        null,
+                }
             );
 
         /* =====================================================
-           GEOGRAPHIC FILTERING
+           IMPORTANT:
+
+           rankSpots() now already removes anything
+           beyond 1.5 km when real coordinates exist.
+
+           We additionally calculate the distance here
+           ourselves so the API response cannot contain
+           a bogus "0 metres" caused by stale matching data.
         ====================================================== */
 
-        let nearbyPrimary =
-            [];
+        const geographicallyValid =
+            ranked
+                .map(
+                    spot => {
+                        let distanceKm =
+                            null;
 
-        let nearbyFallback =
-            [];
+                        if (
+                            hasResolvedLocation &&
+                            isValidCoordinates(
+                                spot.latitude,
+                                spot.longitude
+                            )
+                        ) {
+                            distanceKm =
+                                calculateDistanceKm(
+                                    resolvedLatitude,
+                                    resolvedLongitude,
+                                    Number(
+                                        spot.latitude
+                                    ),
+                                    Number(
+                                        spot.longitude
+                                    )
+                                );
+                        }
 
-        if (
-            hasResolvedLocation
-        ) {
-            /*
-             * FIRST:
-             * Strong local radius.
-             */
+                        /*
+                         * Never trust a missing distance as
+                         * zero.
+                         */
 
-            nearbyPrimary =
-                filterByRadius(
-                    ranked,
-                    resolvedLatitude,
-                    resolvedLongitude,
-                    PRIMARY_RADIUS_KM
+                        if (
+                            hasResolvedLocation &&
+                            !Number.isFinite(
+                                distanceKm
+                            )
+                        ) {
+                            return null;
+                        }
+
+                        /*
+                         * Absolute geographic boundary.
+                         */
+
+                        if (
+                            hasResolvedLocation &&
+                            (
+                                distanceKm <
+                                0 ||
+                                distanceKm >
+                                MAX_MATCH_DISTANCE_KM
+                            )
+                        ) {
+                            return null;
+                        }
+
+                        return {
+                            ...spot,
+
+                            match: {
+                                ...spot.match,
+
+                                distanceKm:
+                                    hasResolvedLocation
+                                        ? distanceKm
+                                        : spot
+                                            .match
+                                            ?.distanceKm ??
+                                        null,
+                            },
+
+                            distanceKm:
+                                hasResolvedLocation
+                                    ? distanceKm
+                                    : spot
+                                        .match
+                                        ?.distanceKm ??
+                                    null,
+                        };
+                    }
+                )
+                .filter(
+                    Boolean
                 );
 
-            /*
-             * SECOND:
-             * Slightly wider radius.
-             *
-             * We only use this if the 1 km
-             * area does not produce useful
-             * results.
-             */
-
-            if (
-                nearbyPrimary.length ===
-                0
-            ) {
-                nearbyFallback =
-                    filterByRadius(
-                        ranked,
-                        resolvedLatitude,
-                        resolvedLongitude,
-                        FALLBACK_RADIUS_KM
-                    );
-            }
-        } else {
-            /*
-             * If location could not be resolved,
-             * we cannot honestly claim a distance.
-             *
-             * Keep text matching available rather
-             * than pretending places are nearby.
-             */
-
-            nearbyPrimary =
-                ranked;
-        }
-
-        /*
-         * Which geographic set should we use?
-         */
-
-        const geographicallyRelevant =
-            hasResolvedLocation
-                ? nearbyPrimary.length >
-                    0
-                    ? nearbyPrimary
-                    : nearbyFallback
-                : nearbyPrimary;
-
-        const usingFallbackRadius =
-            hasResolvedLocation &&
-            nearbyPrimary.length ===
-            0 &&
-            nearbyFallback.length >
-            0;
-
         /* =====================================================
-           SPLIT BY BUDGET
+           BUDGET FILTER
         ====================================================== */
 
-        let primaryResults =
-            [];
-
-        let alternativeResults =
-            [];
+        let budgetEligible =
+            geographicallyValid;
 
         if (
             hasBudget
         ) {
-            /*
-             * PRIMARY:
-             * Within budget or reasonably close.
-             */
-
-            primaryResults =
-                geographicallyRelevant.filter(
+            budgetEligible =
+                geographicallyValid.filter(
                     spot =>
-                        spot.match &&
-                        (
-                            spot.match
-                                .budgetStatus ===
-                            "WITHIN_BUDGET" ||
-                            spot.match
-                                .budgetStatus ===
-                            "NEAR_BUDGET"
+                        isWithinBudget(
+                            spot,
+                            numericBudget,
+                            numericPeople
                         )
                 );
-
-            /*
-             * ABOVE BUDGET:
-             * Kept separate.
-             */
-
-            alternativeResults =
-                geographicallyRelevant.filter(
-                    spot =>
-                        spot.match &&
-                        spot.match
-                            .budgetStatus ===
-                        "ABOVE_BUDGET"
-                );
-        } else {
-            primaryResults =
-                geographicallyRelevant;
         }
 
-        /* =====================================================
-           SMART FALLBACK
-        ====================================================== */
-
         /*
-         * If we are inside the radius but there is
-         * no affordable/near-budget place, show
-         * nearby above-budget options rather than
-         * sending the user to a distant restaurant.
+         * If there are affordable nearby places,
+         * ONLY those are shown.
+         *
+         * We do not quietly replace them with
+         * expensive places.
          */
 
         if (
             hasBudget &&
-            primaryResults.length ===
+            budgetEligible.length >
             0
         ) {
-            primaryResults =
-                alternativeResults.slice(
-                    0,
-                    10
-                );
+            budgetEligible =
+                budgetEligible;
+        }
 
-            alternativeResults =
+        /*
+         * If nothing fits the budget nearby,
+         * return an empty result rather than
+         * showing a restaurant that violates
+         * the user's request.
+         */
+
+        else if (
+            hasBudget
+        ) {
+            budgetEligible =
                 [];
         }
 
         /* =====================================================
-           SORT BY DISTANCE + MATCH
+           PRIMARY 1 KM
         ====================================================== */
 
-        const sortResults =
-            list => {
-                return [
-                    ...list,
-                ].sort(
+        const primaryResults =
+            budgetEligible
+                .filter(
+                    spot => {
+                        const distance =
+                            Number(
+                                spot
+                                    ?.distanceKm
+                            );
+
+                        return (
+                            Number.isFinite(
+                                distance
+                            ) &&
+                            distance <=
+                            PRIMARY_MATCH_DISTANCE_KM
+                        );
+                    }
+                )
+                .sort(
                     (
                         a,
                         b
@@ -933,24 +951,76 @@ export default async function handler(
                                     ?.score
                             ) || 0;
 
-                        const distanceA =
+                        if (
+                            scoreB !==
+                            scoreA
+                        ) {
+                            return (
+                                scoreB -
+                                scoreA
+                            );
+                        }
+
+                        return (
+                            Number(
+                                a.distanceKm
+                            ) -
+                            Number(
+                                b.distanceKm
+                            )
+                        );
+                    }
+                );
+
+        /* =====================================================
+           FALLBACK 1–1.5 KM
+
+           These are NOT placed into the main results.
+
+           They are returned separately so the UI can say:
+
+           "A little farther"
+        ====================================================== */
+
+        const fallbackResults =
+            budgetEligible
+                .filter(
+                    spot => {
+                        const distance =
+                            Number(
+                                spot
+                                    ?.distanceKm
+                            );
+
+                        return (
+                            Number.isFinite(
+                                distance
+                            ) &&
+                            distance >
+                            PRIMARY_MATCH_DISTANCE_KM &&
+                            distance <=
+                            MAX_MATCH_DISTANCE_KM
+                        );
+                    }
+                )
+                .sort(
+                    (
+                        a,
+                        b
+                    ) => {
+                        const scoreA =
                             Number(
                                 a
                                     ?.match
-                                    ?.distanceKm
-                            );
+                                    ?.score
+                            ) || 0;
 
-                        const distanceB =
+                        const scoreB =
                             Number(
                                 b
                                     ?.match
-                                    ?.distanceKm
-                            );
-
-                        /*
-                         * Match score has priority.
-                         * Distance breaks close ties.
-                         */
+                                    ?.score
+                            ) || 0;
 
                         if (
                             scoreB !==
@@ -962,37 +1032,27 @@ export default async function handler(
                             );
                         }
 
-                        if (
-                            Number.isFinite(
-                                distanceA
-                            ) &&
-                            Number.isFinite(
-                                distanceB
+                        return (
+                            Number(
+                                a.distanceKm
+                            ) -
+                            Number(
+                                b.distanceKm
                             )
-                        ) {
-                            return (
-                                distanceA -
-                                distanceB
-                            );
-                        }
-
-                        return 0;
+                        );
                     }
                 );
-            };
-
-        primaryResults =
-            sortResults(
-                primaryResults
-            );
-
-        alternativeResults =
-            sortResults(
-                alternativeResults
-            );
 
         /* =====================================================
-           FORMAT RESULTS
+           FINAL RESULTS
+
+           Main results:
+           ONLY within 1 km.
+
+           Fallback:
+           1–1.5 km.
+
+           NEVER >1.5 km.
         ====================================================== */
 
         const results =
@@ -1002,17 +1062,49 @@ export default async function handler(
                     10
                 )
                 .map(
-                    formatSpot
+                    spot => ({
+                        ...spot,
+
+                        distanceKm:
+                            Number(
+                                spot.distanceKm
+                            ),
+
+                        match: {
+                            ...spot.match,
+
+                            distanceKm:
+                                Number(
+                                    spot.distanceKm
+                                ),
+                        },
+                    })
                 );
 
         const alternatives =
-            alternativeResults
+            fallbackResults
                 .slice(
                     0,
                     5
                 )
                 .map(
-                    formatSpot
+                    spot => ({
+                        ...spot,
+
+                        distanceKm:
+                            Number(
+                                spot.distanceKm
+                            ),
+
+                        match: {
+                            ...spot.match,
+
+                            distanceKm:
+                                Number(
+                                    spot.distanceKm
+                                ),
+                        },
+                    })
                 );
 
         /* =====================================================
@@ -1104,6 +1196,45 @@ export default async function handler(
             alternatives,
 
             searchMeta: {
+                usingLocation:
+                    hasResolvedLocation,
+
+                locationSource,
+
+                locationText:
+                    resolvedLocationText,
+
+                latitude:
+                    hasResolvedLocation
+                        ? resolvedLatitude
+                        : null,
+
+                longitude:
+                    hasResolvedLocation
+                        ? resolvedLongitude
+                        : null,
+
+                locationResolved:
+                    hasResolvedLocation,
+
+                primaryRadiusKm:
+                    PRIMARY_MATCH_DISTANCE_KM,
+
+                maximumRadiusKm:
+                    MAX_MATCH_DISTANCE_KM,
+
+                totalApprovedSpots:
+                    (
+                        spots ||
+                        []
+                    ).length,
+
+                mainResults:
+                    results.length,
+
+                fartherNearbyResults:
+                    alternatives.length,
+
                 budget:
                     hasBudget
                         ? numericBudget
@@ -1116,52 +1247,12 @@ export default async function handler(
                     category ||
                     null,
 
-                locationText:
-                    resolvedLocationText,
-
-                usingLocation:
-                    hasResolvedLocation,
-
-                locationSource,
-
-                latitude:
-                    hasResolvedLocation
-                        ? resolvedLatitude
-                        : null,
-
-                longitude:
-                    hasResolvedLocation
-                        ? resolvedLongitude
-                        : null,
-
-                primaryRadiusKm:
-                    PRIMARY_RADIUS_KM,
-
-                fallbackRadiusKm:
-                    FALLBACK_RADIUS_KM,
-
-                usingFallbackRadius,
-
-                totalApprovedSpots:
-                    (
-                        spots ||
-                        []
-                    ).length,
-
-                primaryCount:
-                    primaryResults.length,
-
-                alternativeCount:
-                    alternativeResults.length,
-
-                locationResolved:
-                    hasResolvedLocation,
-
                 locationResolution:
                     locationResolution
                         ? {
                             displayName:
                                 locationResolution.displayName,
+
                             source:
                                 locationResolution.source,
                         }
