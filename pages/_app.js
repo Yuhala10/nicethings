@@ -2,6 +2,10 @@ import { useEffect } from "react";
 
 import "../styles/globals.css";
 
+import {
+    LanguageProvider,
+} from "../lib/i18n";
+
 import ConsentPopup from "../components/ConsentPopup";
 
 
@@ -22,9 +26,7 @@ export default function App({
         ) {
 
             navigator.serviceWorker
-                .register(
-                    "/sw.js"
-                )
+                .register("/sw.js")
                 .catch(
                     (error) =>
                         console.error(
@@ -42,12 +44,14 @@ export default function App({
     ====================================================== */
 
     return (
-        <>
+        <LanguageProvider>
+
             <Component
                 {...pageProps}
             />
 
             <ConsentPopup />
-        </>
+
+        </LanguageProvider>
     );
 }
