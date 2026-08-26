@@ -32,6 +32,7 @@ function isValidLongitude(value) {
 ========================================================= */
 
 export default async function handler(req, res) {
+
     if (req.method !== "POST") {
         return res.status(405).json({
             error: "Method not allowed.",
@@ -40,7 +41,9 @@ export default async function handler(req, res) {
 
 
     try {
-        const body = req.body || {};
+
+        const body =
+            req.body || {};
 
 
         const {
@@ -63,8 +66,15 @@ export default async function handler(req, res) {
 
             estimatedPrice,
 
+            /*
+             * These are accepted from the frontend
+             * for compatibility, but they are NOT
+             * stored because the database does not
+             * contain submitter_name / submitter_phone.
+             */
             submittedByName,
             submittedByPhone,
+
         } = body;
 
 
@@ -77,7 +87,8 @@ export default async function handler(req, res) {
             !name.trim()
         ) {
             return res.status(400).json({
-                error: "Spot name is required.",
+                error:
+                    "Spot name is required.",
             });
         }
 
@@ -98,20 +109,26 @@ export default async function handler(req, res) {
         ====================================================== */
 
         if (
-            !isValidLatitude(latitude) ||
-            !isValidLongitude(longitude)
+            !isValidLatitude(
+                latitude
+            ) ||
+            !isValidLongitude(
+                longitude
+            )
         ) {
             return res.status(400).json({
                 error:
                     "You must be physically at the Spot and capture its current GPS location before submitting it.",
 
-                locationRequired: true,
+                locationRequired:
+                    true,
             });
         }
 
 
         const numericLatitude =
             Number(latitude);
+
 
         const numericLongitude =
             Number(longitude);
@@ -122,25 +139,26 @@ export default async function handler(req, res) {
         ====================================================== */
 
         const numericAccuracy =
-            Number(locationAccuracy);
+            Number(
+                locationAccuracy
+            );
 
-
-        /*
-         * Accuracy is only used as a quality
-         * check for the registered location.
-         */
 
         if (
-            Number.isFinite(numericAccuracy) &&
+            Number.isFinite(
+                numericAccuracy
+            ) &&
             numericAccuracy > 150
         ) {
             return res.status(400).json({
                 error:
                     "Your GPS location is not accurate enough. Please move closer to the Spot or wait for a better GPS signal and try again.",
 
-                locationRequired: true,
+                locationRequired:
+                    true,
 
-                accuracyTooLow: true,
+                accuracyTooLow:
+                    true,
 
                 accuracy:
                     numericAccuracy,
@@ -152,14 +170,18 @@ export default async function handler(req, res) {
            PRICE
         ====================================================== */
 
-        let numericPrice = null;
+        let numericPrice =
+            null;
 
 
         if (
             estimatedPrice !== null &&
             estimatedPrice !== undefined &&
-            String(estimatedPrice).trim() !== ""
+            String(
+                estimatedPrice
+            ).trim() !== ""
         ) {
+
             numericPrice =
                 Number(
                     estimatedPrice
@@ -193,17 +215,18 @@ export default async function handler(req, res) {
                     "nt_spot_submissions"
                 )
                 .insert({
-                    /*
-                     * VISITOR
-                     */
+
+                    /* -----------------------------------------
+                       VISITOR
+                    ------------------------------------------ */
 
                     visitor_id:
                         visitorId || null,
 
 
-                    /*
-                     * SPOT INFORMATION
-                     */
+                    /* -----------------------------------------
+                       BASIC SPOT INFORMATION
+                    ------------------------------------------ */
 
                     name:
                         name.trim(),
@@ -225,12 +248,12 @@ export default async function handler(req, res) {
                             : null,
 
 
-                    /*
-                     * ADDRESS IS DESCRIPTIVE.
-                     *
-                     * GPS is the authoritative
-                     * geographic location.
-                     */
+                    /* -----------------------------------------
+                       DESCRIPTIVE LOCATION
+                       
+                       These are informational only.
+                       GPS is the authoritative location.
+                    ------------------------------------------ */
 
                     address:
                         address.trim(),
@@ -249,23 +272,24 @@ export default async function handler(req, res) {
                             "string" &&
                             city.trim()
                             ? city.trim()
-                            : "Yaoundé",
+                            : null,
 
 
-                    /*
-                     * AUTHORITATIVE GPS
-                     */
+                    /* -----------------------------------------
+                       AUTHORITATIVE GPS
+                    ------------------------------------------ */
 
                     latitude:
                         numericLatitude,
+
 
                     longitude:
                         numericLongitude,
 
 
-                    /*
-                     * CONTACT
-                     */
+                    /* -----------------------------------------
+                       CONTACT
+                    ------------------------------------------ */
 
                     phone:
                         typeof phone ===
@@ -283,12 +307,12 @@ export default async function handler(req, res) {
                             : null,
 
 
-                    /*
-                     * PRICE
-                     *
-                     * The database schema uses
-                     * price_information as text.
-                     */
+                    /* -----------------------------------------
+                       PRICE
+
+                       Database column:
+                       price_information
+                    ------------------------------------------ */
 
                     price_information:
                         numericPrice !== null
@@ -299,32 +323,16 @@ export default async function handler(req, res) {
 
 
                     /*
-                     * SUBMITTER
-                     */
-
-                    submitter_name:
-                        typeof submittedByName ===
-                            "string" &&
-                            submittedByName.trim()
-                            ? submittedByName.trim()
-                            : null,
-
-
-                    submitter_phone:
-                        typeof submittedByPhone ===
-                            "string" &&
-                            submittedByPhone.trim()
-                            ? submittedByPhone.trim()
-                            : null,
-
-
-                    /*
-                     * IMPORTANT:
+                     * Do NOT manually set:
                      *
-                     * status is intentionally NOT
-                     * supplied here.
+                     * status
+                     * reviewed_at
+                     * spot_id
+                     * admin_note
+                     * created_at
+                     * updated_at
                      *
-                     * The database default is PENDING.
+                     * Let the database handle these.
                      */
                 })
                 .select(
@@ -338,19 +346,15 @@ export default async function handler(req, res) {
         ====================================================== */
 
         if (error) {
+
             console.error(
                 "NiceThings spot submission database error:",
                 error
             );
 
 
-            /*
-             * During development, return the actual
-             * Supabase message so we can see exactly
-             * what is wrong.
-             */
-
             return res.status(500).json({
+
                 error:
                     error.message ||
                     "Unable to submit the Spot.",
@@ -362,6 +366,7 @@ export default async function handler(req, res) {
                 code:
                     error.code ||
                     null,
+
             });
         }
 
@@ -371,12 +376,17 @@ export default async function handler(req, res) {
         ====================================================== */
 
         return res.status(201).json({
-            success: true,
+
+            success:
+                true,
+
 
             submissionId:
                 data.id,
 
+
             location: {
+
                 latitude:
                     numericLatitude,
 
@@ -389,7 +399,9 @@ export default async function handler(req, res) {
                     )
                         ? numericAccuracy
                         : null,
+
             },
+
         });
 
 
@@ -402,6 +414,7 @@ export default async function handler(req, res) {
 
 
         return res.status(500).json({
+
             error:
                 error?.message ||
                 "Unable to submit the Spot.",
@@ -413,6 +426,7 @@ export default async function handler(req, res) {
             code:
                 error?.code ||
                 null,
+
         });
     }
 }
