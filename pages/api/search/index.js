@@ -17,7 +17,7 @@ import {
 
 
 /* =========================================================
-   LOCATION HELPERS
+   LOCATION VALIDATION
 ========================================================= */
 
 function isValidCoordinates(
@@ -41,14 +41,6 @@ function isValidCoordinates(
 
 /* =========================================================
    HAVERSINE DISTANCE
-
-   Returns REAL straight-line distance between
-   two coordinate pairs.
-
-   This is used for search filtering.
-
-   Road distance is handled separately
-   by the routing system.
 ========================================================= */
 
 function calculateDistanceKm(
@@ -125,15 +117,6 @@ function calculateDistanceKm(
 
 /* =========================================================
    BUDGET CHECK
-
-   This is intentionally strict.
-
-   If a user supplies a budget, we prefer places
-   that can actually fit that budget.
-
-   A place whose MINIMUM price is already above
-   the user's total budget is not considered
-   affordable.
 ========================================================= */
 
 function isWithinBudget(
@@ -208,12 +191,6 @@ function isWithinBudget(
             lowestKnownPrice
         )
     ) {
-        /*
-         * Unknown pricing is not automatically
-         * rejected. The matching engine will
-         * penalize it appropriately.
-         */
-
         return true;
     }
 
@@ -244,25 +221,28 @@ export default async function handler(
         });
     }
 
+
     try {
         const {
             visitorId,
 
-            /*
-             * LOCATION IS GPS ONLY.
-             *
-             * No locationText.
-             * No manually entered quarter.
-             */
-
             latitude,
             longitude,
+
+            /*
+             * Kept only for recording/display.
+             *
+             * NEVER used to determine the user's
+             * geographic position anymore.
+             */
+            locationText,
 
             budget,
             people,
             category,
             language = "en",
-        } = req.body || {};
+        } =
+            req.body || {};
 
 
         /* =====================================================
@@ -309,13 +289,16 @@ export default async function handler(
         let access =
             null;
 
+
         if (
             !launchFree &&
             !admin
         ) {
             const {
-                data: activeAccess,
-                error: accessError,
+                data:
+                activeAccess,
+                error:
+                accessError,
             } =
                 await supabaseAdmin
                     .from(
@@ -334,7 +317,8 @@ export default async function handler(
                     )
                     .gt(
                         "expires_at",
-                        new Date().toISOString()
+                        new Date()
+                            .toISOString()
                     )
                     .order(
                         "expires_at",
@@ -343,8 +327,11 @@ export default async function handler(
                                 false,
                         }
                     )
-                    .limit(1)
+                    .limit(
+                        1
+                    )
                     .maybeSingle();
+
 
             if (
                 accessError
@@ -365,6 +352,7 @@ export default async function handler(
                 });
             }
 
+
             if (
                 !activeAccess
             ) {
@@ -382,12 +370,96 @@ export default async function handler(
                 });
             }
 
+
             access =
                 activeAccess;
         }
+
+
         /* =====================================================
-          INPUT NORMALIZATION
-       ====================================================== */
+           GPS IS NOW REQUIRED
+        ====================================================== */
+
+        const userLatitude =
+            Number(
+                latitude
+            );
+
+        const userLongitude =
+            Number(
+                longitude
+            );
+
+
+        const hasGps =
+            isValidCoordinates(
+                userLatitude,
+                userLongitude
+            );
+
+
+        if (
+            !hasGps
+        ) {
+            return res.status(
+                400
+            ).json({
+                error:
+                    language ===
+                        "fr"
+                        ? "Activez votre position actuelle pour trouver les endroits près de vous."
+                        : "Please use your current location so we can find places near you.",
+
+                locationRequired:
+                    true,
+
+                locationSource:
+                    "gps_required",
+            });
+        }
+
+
+        /* =====================================================
+           IMPORTANT LOCATION RULE
+           
+           Typed area is NEVER converted into coordinates.
+           
+           GPS is the ONLY geographic source for nearby
+           matching.
+        ====================================================== */
+
+        const resolvedLatitude =
+            userLatitude;
+
+        const resolvedLongitude =
+            userLongitude;
+
+        const locationSource =
+            "gps";
+
+        const hasResolvedLocation =
+            true;
+
+
+        /*
+         * Keep the text only as descriptive/search history
+         * information. It has NO effect on distance.
+         */
+        const resolvedLocationText =
+            typeof locationText ===
+                "string" &&
+                locationText.trim()
+                ? locationText.trim()
+                : null;
+
+
+        const locationResolution =
+            null;
+
+
+        /* =====================================================
+           INPUT NORMALIZATION
+        ====================================================== */
 
         const numericBudget =
             Number(
@@ -398,8 +470,8 @@ export default async function handler(
             Number.isFinite(
                 numericBudget
             ) &&
-            numericBudget >
-            0;
+            numericBudget > 0;
+
 
         const numericPeople =
             Math.max(
@@ -411,75 +483,9 @@ export default async function handler(
 
 
         /* =====================================================
-           GPS LOCATION — REQUIRED
-        ====================================================== */
-
-        const submittedLatitude =
-            Number(
-                latitude
-            );
-
-        const submittedLongitude =
-            Number(
-                longitude
-            );
-
-        const hasGps =
-            isValidCoordinates(
-                submittedLatitude,
-                submittedLongitude
-            );
-
-
-        /*
-         * NiceThings now uses the user's CURRENT
-         * GPS location only.
-         *
-         * We do NOT:
-         *
-         * - geocode quarters
-         * - interpret typed areas
-         * - fall back to text locations
-         * - guess where the user is
-         */
-
-        if (
-            !hasGps
-        ) {
-            return res.status(
-                400
-            ).json({
-                error:
-                    language ===
-                        "fr"
-                        ? "Votre position actuelle est requise pour trouver des endroits à proximité."
-                        : "Your current location is required to find nearby places.",
-
-                locationRequired:
-                    true,
-            });
-        }
-
-
-        /* =====================================================
-           RESOLVED LOCATION
-        ====================================================== */
-
-        const resolvedLatitude =
-            submittedLatitude;
-
-        const resolvedLongitude =
-            submittedLongitude;
-
-        const locationSource =
-            "gps";
-
-        const hasResolvedLocation =
-            true;
-
-
-        /* =====================================================
            GET APPROVED SPOTS
+           
+           ONLY APPROVED SPOTS.
         ====================================================== */
 
         const {
@@ -521,7 +527,9 @@ export default async function handler(
                     "status",
                     "APPROVED"
                 )
-                .limit(250);
+                .limit(
+                    250
+                );
 
 
         if (
@@ -545,12 +553,37 @@ export default async function handler(
 
 
         /* =====================================================
-           SCORE EVERYTHING
+           REMOVE SPOTS WITHOUT REAL GPS
+           
+           We do NOT guess their location from:
+           - neighborhood
+           - address
+           - city
+           - name
+        ====================================================== */
+
+        const gpsSpots =
+            (
+                spots ||
+                []
+            ).filter(
+                spot =>
+                    isValidCoordinates(
+                        spot?.latitude,
+                        spot?.longitude
+                    )
+            );
+
+
+        /* =====================================================
+           RANK SPOTS
+           
+           Location is now always the user's REAL GPS.
         ====================================================== */
 
         const ranked =
             rankSpots(
-                spots || [],
+                gpsSpots,
                 {
                     latitude:
                         resolvedLatitude,
@@ -559,15 +592,9 @@ export default async function handler(
                         resolvedLongitude,
 
                     /*
-                     * No typed location is used.
-                     *
-                     * Matching is based on:
-                     * GPS coordinates
-                     * budget
-                     * people
-                     * category
+                     * Do not let typed location influence
+                     * the geographic match.
                      */
-
                     locationText:
                         null,
 
@@ -587,7 +614,9 @@ export default async function handler(
 
 
         /* =====================================================
-           CALCULATE REAL GEOGRAPHIC DISTANCE
+           RE-CALCULATE DISTANCE
+           
+           This prevents stale/fake distance values.
         ====================================================== */
 
         const geographicallyValid =
@@ -595,40 +624,18 @@ export default async function handler(
                 .map(
                     spot => {
 
-                        let distanceKm =
-                            null;
+                        const distanceKm =
+                            calculateDistanceKm(
+                                resolvedLatitude,
+                                resolvedLongitude,
+                                Number(
+                                    spot.latitude
+                                ),
+                                Number(
+                                    spot.longitude
+                                )
+                            );
 
-
-                        /*
-                         * Every approved spot must have
-                         * valid coordinates to participate
-                         * in GPS-based matching.
-                         */
-
-                        if (
-                            isValidCoordinates(
-                                spot.latitude,
-                                spot.longitude
-                            )
-                        ) {
-                            distanceKm =
-                                calculateDistanceKm(
-                                    resolvedLatitude,
-                                    resolvedLongitude,
-                                    Number(
-                                        spot.latitude
-                                    ),
-                                    Number(
-                                        spot.longitude
-                                    )
-                                );
-                        }
-
-
-                        /*
-                         * Never treat missing distance
-                         * as zero.
-                         */
 
                         if (
                             !Number.isFinite(
@@ -638,13 +645,6 @@ export default async function handler(
                             return null;
                         }
 
-
-                        /*
-                         * Absolute maximum boundary.
-                         *
-                         * Anything beyond the maximum
-                         * radius is completely removed.
-                         */
 
                         if (
                             distanceKm <
@@ -659,15 +659,13 @@ export default async function handler(
                         return {
                             ...spot,
 
+                            distanceKm,
+
                             match: {
                                 ...spot.match,
 
-                                distanceKm:
-                                    distanceKm,
-                            },
-
-                            distanceKm:
                                 distanceKm,
+                            },
                         };
                     }
                 )
@@ -699,49 +697,32 @@ export default async function handler(
         }
 
 
-        /*
-         * If there are affordable nearby places,
-         * ONLY those are shown.
-         *
-         * We do not quietly replace them with
-         * expensive places.
-         */
-
         if (
             hasBudget &&
-            budgetEligible.length >
+            budgetEligible.length ===
             0
-        ) {
-            budgetEligible =
-                budgetEligible;
-        }
-
-
-        /*
-         * If nothing fits the budget nearby,
-         * return an empty result rather than
-         * showing a place that violates the
-         * user's request.
-         */
-
-        else if (
-            hasBudget
         ) {
             budgetEligible =
                 [];
         }
+
+
         /* =====================================================
-         PRIMARY RESULTS — WITHIN 1 KM
-      ====================================================== */
+           PRIMARY RESULTS
+           
+           Within PRIMARY_MATCH_DISTANCE_KM.
+        ====================================================== */
 
         const primaryResults =
             budgetEligible
                 .filter(
                     spot => {
+
                         const distance =
                             Number(
                                 spot?.distanceKm
                             );
+
 
                         return (
                             Number.isFinite(
@@ -757,6 +738,7 @@ export default async function handler(
                         a,
                         b
                     ) => {
+
                         const scoreA =
                             Number(
                                 a?.match?.score
@@ -767,6 +749,7 @@ export default async function handler(
                                 b?.match?.score
                             ) || 0;
 
+
                         if (
                             scoreB !==
                             scoreA
@@ -776,6 +759,7 @@ export default async function handler(
                                 scoreA
                             );
                         }
+
 
                         return (
                             Number(
@@ -790,29 +774,30 @@ export default async function handler(
 
 
         /* =====================================================
-           FALLBACK RESULTS — 1 TO 1.5 KM
-
-           These are NOT part of the primary results.
-
-           They are returned separately so the UI can
-           clearly identify them as slightly farther away.
+           FALLBACK RESULTS
+           
+           1 KM TO 1.5 KM.
         ====================================================== */
 
         const fallbackResults =
             budgetEligible
                 .filter(
                     spot => {
+
                         const distance =
                             Number(
                                 spot?.distanceKm
                             );
 
+
                         return (
                             Number.isFinite(
                                 distance
                             ) &&
+
                             distance >
                             PRIMARY_MATCH_DISTANCE_KM &&
+
                             distance <=
                             MAX_MATCH_DISTANCE_KM
                         );
@@ -823,6 +808,7 @@ export default async function handler(
                         a,
                         b
                     ) => {
+
                         const scoreA =
                             Number(
                                 a?.match?.score
@@ -833,6 +819,7 @@ export default async function handler(
                                 b?.match?.score
                             ) || 0;
 
+
                         if (
                             scoreB !==
                             scoreA
@@ -842,6 +829,7 @@ export default async function handler(
                                 scoreA
                             );
                         }
+
 
                         return (
                             Number(
@@ -857,14 +845,6 @@ export default async function handler(
 
         /* =====================================================
            FINAL RESULTS
-
-           Main results:
-           ONLY within 1 KM.
-
-           Alternatives:
-           1 KM to 1.5 KM.
-
-           NEVER return anything beyond 1.5 KM.
         ====================================================== */
 
         const results =
@@ -942,15 +922,14 @@ export default async function handler(
                         null,
 
                     /*
-                     * No manually entered location is stored.
-                     *
-                     * The user's location is represented
-                     * by the actual GPS coordinates.
+                     * This text is stored for history only.
                      */
-
                     location_text:
-                        null,
+                        resolvedLocationText,
 
+                    /*
+                     * AUTHORITATIVE USER GPS.
+                     */
                     latitude:
                         resolvedLatitude,
 
@@ -989,9 +968,11 @@ export default async function handler(
                 searchError
             );
         }
+
+
         /* =====================================================
-          RESPONSE
-       ====================================================== */
+           RESPONSE
+        ====================================================== */
 
         return res.status(
             200
@@ -1013,23 +994,14 @@ export default async function handler(
             alternatives,
 
             searchMeta: {
-                /*
-                 * GPS is always active here because
-                 * searches without GPS were rejected above.
-                 */
-
                 usingLocation:
                     true,
 
                 locationSource:
                     "gps",
 
-                /*
-                 * No manually entered location.
-                 */
-
                 locationText:
-                    null,
+                    resolvedLocationText,
 
                 latitude:
                     resolvedLatitude,
@@ -1052,6 +1024,16 @@ export default async function handler(
                         []
                     ).length,
 
+                approvedSpotsWithGps:
+                    gpsSpots.length,
+
+                approvedSpotsWithoutGps:
+                    (
+                        spots ||
+                        []
+                    ).length -
+                    gpsSpots.length,
+
                 mainResults:
                     results.length,
 
@@ -1068,6 +1050,9 @@ export default async function handler(
 
                 category:
                     category ||
+                    null,
+
+                locationResolution:
                     null,
             },
         });

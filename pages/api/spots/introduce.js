@@ -1,215 +1,241 @@
 import supabaseAdmin from "../../../lib/supabaseAdmin";
 
-export default async function handler(req, res) {
-    if (req.method !== "POST") {
-        return res.status(405).json({
-            error: "Method not allowed.",
+
+/* =========================================================
+   LOCATION VALIDATION
+========================================================= */
+
+function isValidLatitude(
+    value
+) {
+    const number =
+        Number(value);
+
+    return (
+        Number.isFinite(
+            number
+        ) &&
+        number >= -90 &&
+        number <= 90
+    );
+}
+
+
+function isValidLongitude(
+    value
+) {
+    const number =
+        Number(value);
+
+    return (
+        Number.isFinite(
+            number
+        ) &&
+        number >= -180 &&
+        number <= 180
+    );
+}
+
+
+/* =========================================================
+   HANDLER
+========================================================= */
+
+export default async function handler(
+    req,
+    res
+) {
+    if (
+        req.method !==
+        "POST"
+    ) {
+        return res.status(
+            405
+        ).json({
+            error:
+                "Method not allowed.",
         });
     }
 
+
     try {
-        const body = req.body || {};
+        const body =
+            req.body ||
+            {};
+
 
         const {
             visitorId,
+
             name,
             category,
             description,
+
             address,
             neighborhood,
             city,
+
             latitude,
             longitude,
+            locationAccuracy,
+
             phone,
             whatsapp,
-            priceInformation,
+
             estimatedPrice,
-            openingHours,
+
+            submittedByName,
+            submittedByPhone,
         } = body;
 
+
         /* =====================================================
-           VALIDATION
+           REQUIRED BASIC INFORMATION
         ====================================================== */
 
-        if (!name || !String(name).trim()) {
-            return res.status(400).json({
-                error: "Spot name is required.",
+        if (
+            typeof name !==
+            "string" ||
+            !name.trim()
+        ) {
+            return res.status(
+                400
+            ).json({
+                error:
+                    "Spot name is required.",
             });
         }
 
-        if (!address || !String(address).trim()) {
-            return res.status(400).json({
-                error: "Spot address is required.",
+
+        if (
+            typeof address !==
+            "string" ||
+            !address.trim()
+        ) {
+            return res.status(
+                400
+            ).json({
+                error:
+                    "Please provide an address or clear directions.",
             });
         }
 
+
         /* =====================================================
-           NORMALIZE
+           GPS IS NOW MANDATORY
         ====================================================== */
 
-        const cleanName =
-            String(name).trim();
+        if (
+            !isValidLatitude(
+                latitude
+            ) ||
+            !isValidLongitude(
+                longitude
+            )
+        ) {
+            return res.status(
+                400
+            ).json({
+                error:
+                    "You must be physically at the Spot and capture its current GPS location before submitting it.",
+                locationRequired:
+                    true,
+            });
+        }
 
-        const cleanAddress =
-            String(address).trim();
 
-        const cleanCategory =
-            category
-                ? String(category).trim()
-                : null;
+        const numericLatitude =
+            Number(
+                latitude
+            );
 
-        const cleanDescription =
-            description
-                ? String(description).trim()
-                : null;
+        const numericLongitude =
+            Number(
+                longitude
+            );
 
-        const cleanNeighborhood =
-            neighborhood
-                ? String(neighborhood).trim()
-                : null;
 
-        const cleanCity =
-            city
-                ? String(city).trim()
-                : "Yaoundé";
+        /* =====================================================
+           GPS ACCURACY
+        ====================================================== */
 
-        const cleanPhone =
-            phone
-                ? String(phone).trim()
-                : null;
+        const numericAccuracy =
+            Number(
+                locationAccuracy
+            );
 
-        const cleanWhatsapp =
-            whatsapp
-                ? String(whatsapp).trim()
-                : null;
-
-        let cleanPriceInformation =
-            priceInformation
-                ? String(
-                    priceInformation
-                ).trim()
-                : null;
 
         /*
-         * Backward compatibility with older
-         * introduce forms.
+         * Accuracy is not used to calculate distance.
+         *
+         * It is only a quality check for the registration
+         * location.
+         *
+         * If the browser supplied an accuracy value and it
+         * is extremely poor, reject the submission.
          */
 
         if (
-            !cleanPriceInformation &&
-            estimatedPrice !== undefined &&
-            estimatedPrice !== null &&
-            String(estimatedPrice).trim()
+            Number.isFinite(
+                numericAccuracy
+            ) &&
+            numericAccuracy >
+            150
         ) {
-            cleanPriceInformation =
-                `${String(
-                    estimatedPrice
-                ).trim()} FCFA`;
+            return res.status(
+                400
+            ).json({
+                error:
+                    "Your GPS location is not accurate enough. Please move closer to the Spot or wait for a better GPS signal and try again.",
+                locationRequired:
+                    true,
+                accuracyTooLow:
+                    true,
+                accuracy:
+                    numericAccuracy,
+            });
         }
 
-        const cleanOpeningHours =
-            openingHours
-                ? String(
-                    openingHours
-                ).trim()
-                : null;
 
         /* =====================================================
-           VISITOR VALIDATION
+           PRICE
         ====================================================== */
 
-        /*
-         * visitor_id is optional in the database.
-         *
-         * However, if the browser sends a visitorId,
-         * we first verify that it actually exists in
-         * nt_visitors.
-         *
-         * This prevents the foreign-key error:
-         *
-         * nt_spot_submissions_visitor_id_fkey
-         *
-         * If the visitor does not exist, we simply use
-         * null instead of blocking the spot submission.
-         */
+        let numericPrice =
+            null;
 
-        let cleanVisitorId = null;
 
-        if (visitorId) {
-            const {
-                data: visitor,
-                error: visitorError,
-            } = await supabaseAdmin
-                .from("nt_visitors")
-                .select("id")
-                .eq(
-                    "id",
-                    visitorId
-                )
-                .maybeSingle();
-
-            if (visitorError) {
-                console.error(
-                    "Visitor lookup error:",
-                    visitorError
+        if (
+            estimatedPrice !==
+            null &&
+            estimatedPrice !==
+            undefined &&
+            String(
+                estimatedPrice
+            ).trim() !== ""
+        ) {
+            numericPrice =
+                Number(
+                    estimatedPrice
                 );
 
-                /*
-                 * Do not fail the spot submission.
-                 *
-                 * visitor_id is optional, so we simply
-                 * continue with null.
-                 */
-            }
-
-            if (visitor) {
-                cleanVisitorId =
-                    visitor.id;
-            }
-        }
-
-        /* =====================================================
-           COORDINATES
-        ====================================================== */
-
-        let cleanLatitude = null;
-        let cleanLongitude = null;
-
-        if (
-            latitude !== undefined &&
-            latitude !== null &&
-            String(latitude).trim()
-        ) {
-            const value =
-                Number(latitude);
 
             if (
-                Number.isFinite(value) &&
-                value >= -90 &&
-                value <= 90
+                !Number.isFinite(
+                    numericPrice
+                ) ||
+                numericPrice <
+                0
             ) {
-                cleanLatitude =
-                    value;
+                return res.status(
+                    400
+                ).json({
+                    error:
+                        "Invalid estimated price.",
+                });
             }
         }
 
-        if (
-            longitude !== undefined &&
-            longitude !== null &&
-            String(longitude).trim()
-        ) {
-            const value =
-                Number(longitude);
-
-            if (
-                Number.isFinite(value) &&
-                value >= -180 &&
-                value <= 180
-            ) {
-                cleanLongitude =
-                    value;
-            }
-        }
 
         /* =====================================================
            CREATE SUBMISSION
@@ -218,93 +244,176 @@ export default async function handler(req, res) {
         const {
             data,
             error,
-        } = await supabaseAdmin
-            .from(
-                "nt_spot_submissions"
-            )
-            .insert({
-                visitor_id:
-                    cleanVisitorId,
+        } =
+            await supabaseAdmin
+                .from(
+                    "nt_submissions"
+                )
+                .insert({
+                    visitor_id:
+                        visitorId ||
+                        null,
 
-                name:
-                    cleanName,
+                    spot_name:
+                        name.trim(),
 
-                category:
-                    cleanCategory,
+                    category:
+                        typeof category ===
+                            "string" &&
+                            category.trim()
+                            ? category.trim()
+                            : null,
 
-                description:
-                    cleanDescription,
+                    description:
+                        typeof description ===
+                            "string" &&
+                            description.trim()
+                            ? description.trim()
+                            : null,
 
-                address:
-                    cleanAddress,
+                    /*
+                     * Address is descriptive only.
+                     *
+                     * It is NOT used to determine the
+                     * geographic coordinates.
+                     */
 
-                neighborhood:
-                    cleanNeighborhood,
+                    address:
+                        address.trim(),
 
-                city:
-                    cleanCity,
+                    /*
+                     * Neighborhood is also descriptive only.
+                     *
+                     * The Spot's actual location is latitude
+                     * + longitude.
+                     */
 
-                latitude:
-                    cleanLatitude,
+                    neighborhood:
+                        typeof neighborhood ===
+                            "string" &&
+                            neighborhood.trim()
+                            ? neighborhood.trim()
+                            : null,
 
-                longitude:
-                    cleanLongitude,
+                    city:
+                        typeof city ===
+                            "string" &&
+                            city.trim()
+                            ? city.trim()
+                            : "Yaoundé",
 
-                phone:
-                    cleanPhone,
 
-                whatsapp:
-                    cleanWhatsapp,
+                    /* =========================================
+                       AUTHORITATIVE LOCATION
+                    ========================================== */
 
-                price_information:
-                    cleanPriceInformation,
+                    latitude:
+                        numericLatitude,
 
-                opening_hours:
-                    cleanOpeningHours,
+                    longitude:
+                        numericLongitude,
 
-                status:
-                    "PENDING",
-            })
-            .select("id")
-            .single();
+
+                    phone:
+                        typeof phone ===
+                            "string" &&
+                            phone.trim()
+                            ? phone.trim()
+                            : null,
+
+                    whatsapp:
+                        typeof whatsapp ===
+                            "string" &&
+                            whatsapp.trim()
+                            ? whatsapp.trim()
+                            : null,
+
+                    estimated_price:
+                        numericPrice,
+
+                    submitted_by_name:
+                        typeof submittedByName ===
+                            "string" &&
+                            submittedByName.trim()
+                            ? submittedByName.trim()
+                            : null,
+
+                    submitted_by_phone:
+                        typeof submittedByPhone ===
+                            "string" &&
+                            submittedByPhone.trim()
+                            ? submittedByPhone.trim()
+                            : null,
+                })
+                .select(
+                    "id"
+                )
+                .single();
+
 
         /* =====================================================
            DATABASE ERROR
         ====================================================== */
 
-        if (error) {
+        if (
+            error
+        ) {
             console.error(
-                "Spot submission error:",
+                "NiceThings spot submission:",
                 error
             );
 
-            return res.status(500).json({
+            return res.status(
+                500
+            ).json({
                 error:
-                    error.message ||
-                    "Unable to submit the spot.",
+                    "Unable to submit the Spot.",
             });
         }
+
 
         /* =====================================================
            SUCCESS
         ====================================================== */
 
-        return res.status(201).json({
-            success: true,
+        return res.status(
+            201
+        ).json({
+            success:
+                true,
 
             submissionId:
                 data.id,
+
+            location: {
+                latitude:
+                    numericLatitude,
+
+                longitude:
+                    numericLongitude,
+
+                accuracy:
+                    Number.isFinite(
+                        numericAccuracy
+                    )
+                        ? numericAccuracy
+                        : null,
+            },
         });
-    } catch (error) {
+
+    } catch (
+    error
+    ) {
         console.error(
-            "Spot submission API:",
+            "NiceThings spot submission error:",
             error
         );
 
-        return res.status(500).json({
+        return res.status(
+            500
+        ).json({
             error:
-                error.message ||
-                "Unable to submit the spot.",
+                "Unable to submit the Spot.",
         });
     }
 }

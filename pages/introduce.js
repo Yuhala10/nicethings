@@ -6,6 +6,8 @@ import {
     MapPin,
     Send,
     Sparkles,
+    Navigation,
+    LocateFixed,
 } from "lucide-react";
 
 import AppShell from "../components/layout/AppShell";
@@ -43,6 +45,36 @@ export default function IntroducePage() {
         });
 
 
+    /* =====================================================
+       GPS LOCATION
+    ====================================================== */
+
+    const [
+        location,
+        setLocation,
+    ] = useState({
+        latitude: null,
+        longitude: null,
+        accuracy: null,
+    });
+
+
+    const [
+        locating,
+        setLocating,
+    ] = useState(false);
+
+
+    const [
+        locationError,
+        setLocationError,
+    ] = useState("");
+
+
+    /* =====================================================
+       GENERAL STATE
+    ====================================================== */
+
     const [loading, setLoading] =
         useState(false);
 
@@ -71,18 +103,275 @@ export default function IntroducePage() {
 
 
     /* =====================================================
+       GPS HELPERS
+    ====================================================== */
+
+    function isValidCoordinates(
+        latitude,
+        longitude
+    ) {
+        const lat =
+            Number(
+                latitude
+            );
+
+        const lng =
+            Number(
+                longitude
+            );
+
+        return (
+            Number.isFinite(
+                lat
+            ) &&
+            Number.isFinite(
+                lng
+            ) &&
+            lat >= -90 &&
+            lat <= 90 &&
+            lng >= -180 &&
+            lng <= 180
+        );
+    }
+
+
+    function getLocationErrorMessage(
+        geoError
+    ) {
+        if (
+            !geoError
+        ) {
+            return "Unable to get your current location.";
+        }
+
+
+        switch (
+        geoError.code
+        ) {
+            case 1:
+                return (
+                    "Location permission was denied. Please allow location access in your browser settings and try again."
+                );
+
+            case 2:
+                return (
+                    "Your location could not be determined. Please make sure GPS/location services are enabled and try again."
+                );
+
+            case 3:
+                return (
+                    "Location request timed out. Please move to an area with a better GPS signal and try again."
+                );
+
+            default:
+                return (
+                    geoError.message ||
+                    "Unable to get your current location."
+                );
+        }
+    }
+
+
+    /* =====================================================
+       CAPTURE CURRENT LOCATION
+    ====================================================== */
+
+    function captureCurrentLocation() {
+        setLocationError(
+            ""
+        );
+
+        setError(
+            ""
+        );
+
+
+        if (
+            typeof window ===
+            "undefined"
+        ) {
+            return;
+        }
+
+
+        if (
+            !navigator.geolocation
+        ) {
+            setLocationError(
+                "Your browser does not support GPS location. Please use a browser with location services enabled."
+            );
+
+            return;
+        }
+
+
+        setLocating(
+            true
+        );
+
+
+        navigator.geolocation.getCurrentPosition(
+            position => {
+                const latitude =
+                    Number(
+                        position.coords.latitude
+                    );
+
+                const longitude =
+                    Number(
+                        position.coords.longitude
+                    );
+
+                const accuracy =
+                    Number(
+                        position.coords.accuracy
+                    );
+
+
+                if (
+                    !isValidCoordinates(
+                        latitude,
+                        longitude
+                    )
+                ) {
+                    setLocationError(
+                        "The GPS coordinates returned by your device are invalid. Please try again."
+                    );
+
+                    setLocating(
+                        false
+                    );
+
+                    return;
+                }
+
+
+                /*
+                 * We need a reasonably accurate position
+                 * because this location becomes the actual
+                 * location of the Spot.
+                 *
+                 * 150 metres is our maximum acceptable
+                 * registration accuracy.
+                 */
+
+                if (
+                    Number.isFinite(
+                        accuracy
+                    ) &&
+                    accuracy >
+                    150
+                ) {
+                    setLocation({
+                        latitude:
+                            null,
+
+                        longitude:
+                            null,
+
+                        accuracy,
+                    });
+
+
+                    setLocationError(
+                        `Your GPS accuracy is currently about ${Math.round(
+                            accuracy
+                        )} metres. Please wait for a stronger GPS signal and try again.`
+                    );
+
+
+                    setLocating(
+                        false
+                    );
+
+                    return;
+                }
+
+
+                setLocation({
+                    latitude,
+                    longitude,
+                    accuracy:
+                        Number.isFinite(
+                            accuracy
+                        )
+                            ? accuracy
+                            : null,
+                });
+
+
+                setLocationError(
+                    ""
+                );
+
+
+                setLocating(
+                    false
+                );
+
+            },
+
+            geoError => {
+                console.error(
+                    "NiceThings GPS error:",
+                    geoError
+                );
+
+
+                setLocationError(
+                    getLocationErrorMessage(
+                        geoError
+                    )
+                );
+
+
+                setLocating(
+                    false
+                );
+            },
+
+            {
+                enableHighAccuracy:
+                    true,
+
+                timeout:
+                    20000,
+
+                maximumAge:
+                    0,
+            }
+        );
+    }
+
+
+    /* =====================================================
+       LOCATION STATUS
+    ====================================================== */
+
+    const locationCaptured =
+        isValidCoordinates(
+            location.latitude,
+            location.longitude
+        );
+
+
+    /* =====================================================
        CATEGORY NAME
     ====================================================== */
 
     function getCategoryName(
         category
     ) {
-        if (!category) {
+        if (
+            !category
+        ) {
             return "";
         }
 
+
         if (
-            language === "fr"
+            language ===
+            "fr"
         ) {
             return (
                 category.fr ||
@@ -90,6 +379,7 @@ export default function IntroducePage() {
                 category.id
             );
         }
+
 
         return (
             category.en ||
@@ -108,8 +398,15 @@ export default function IntroducePage() {
     ) {
         event.preventDefault();
 
-        setError("");
 
+        setError(
+            ""
+        );
+
+
+        /* =================================================
+           REQUIRED BASIC FIELDS
+        ================================================== */
 
         if (
             !form.name.trim() ||
@@ -124,6 +421,25 @@ export default function IntroducePage() {
             return;
         }
 
+
+        /* =================================================
+           GPS IS REQUIRED
+        ================================================== */
+
+        if (
+            !locationCaptured
+        ) {
+            setError(
+                "You must be physically at the Spot and capture its current GPS location before submitting it."
+            );
+
+            return;
+        }
+
+
+        /* =================================================
+           VISITOR ID
+        ================================================== */
 
         let visitorId =
             null;
@@ -140,7 +456,9 @@ export default function IntroducePage() {
         }
 
 
-        setLoading(true);
+        setLoading(
+            true
+        );
 
 
         try {
@@ -159,6 +477,7 @@ export default function IntroducePage() {
                         body:
                             JSON.stringify({
                                 visitorId,
+
                                 ...form,
 
                                 name:
@@ -174,6 +493,13 @@ export default function IntroducePage() {
 
                                 address:
                                     form.address.trim(),
+
+                                /*
+                                 * Neighborhood is now descriptive.
+                                 *
+                                 * It does NOT determine the
+                                 * geographic position.
+                                 */
 
                                 neighborhood:
                                     form.neighborhood.trim() ||
@@ -206,18 +532,47 @@ export default function IntroducePage() {
                                 submittedByPhone:
                                     form.submittedByPhone.trim() ||
                                     null,
+
+
+                                /* =========================
+                                   AUTHORITATIVE GPS
+                                ========================== */
+
+                                latitude:
+                                    Number(
+                                        location.latitude
+                                    ),
+
+                                longitude:
+                                    Number(
+                                        location.longitude
+                                    ),
+
+                                locationAccuracy:
+                                    Number.isFinite(
+                                        Number(
+                                            location.accuracy
+                                        )
+                                    )
+                                        ? Number(
+                                            location.accuracy
+                                        )
+                                        : null,
                             }),
                     }
                 );
 
 
-            let data = {};
+            let data =
+                {};
 
             try {
                 data =
                     await response.json();
+
             } catch {
-                data = {};
+                data =
+                    {};
             }
 
 
@@ -236,6 +591,7 @@ export default function IntroducePage() {
             setSubmitted(
                 true
             );
+
         } catch (
         submitError
         ) {
@@ -244,23 +600,23 @@ export default function IntroducePage() {
                 submitError
             );
 
+
             setError(
                 submitError.message ||
                 t(
                     "introduceError"
                 )
             );
+
         } finally {
             setLoading(
                 false
             );
         }
     }
-
-
     /* =====================================================
-       SUCCESS
-    ====================================================== */
+      SUCCESS SCREEN
+   ====================================================== */
 
     if (
         submitted
@@ -327,7 +683,7 @@ export default function IntroducePage() {
 
 
     /* =====================================================
-       PAGE
+       MAIN PAGE
     ====================================================== */
 
     return (
@@ -603,6 +959,526 @@ export default function IntroducePage() {
 
 
                         {/* =================================================
+                            GPS LOCATION
+                        ================================================== */}
+
+                        <section
+                            style={{
+                                marginTop:
+                                    "8px",
+
+                                padding:
+                                    "18px",
+
+                                border:
+                                    locationCaptured
+                                        ? "1px solid #b7e4c7"
+                                        : "1px solid var(--nt-border)",
+
+                                borderRadius:
+                                    "var(--nt-radius-lg)",
+
+                                background:
+                                    locationCaptured
+                                        ? "#f0fdf4"
+                                        : "var(--nt-white)",
+                            }}
+                        >
+
+                            <div
+                                style={{
+                                    display:
+                                        "flex",
+
+                                    alignItems:
+                                        "flex-start",
+
+                                    gap:
+                                        "12px",
+                                }}
+                            >
+
+                                <div
+                                    style={{
+                                        width:
+                                            "42px",
+
+                                        height:
+                                            "42px",
+
+                                        flexShrink:
+                                            0,
+
+                                        borderRadius:
+                                            "50%",
+
+                                        display:
+                                            "flex",
+
+                                        alignItems:
+                                            "center",
+
+                                        justifyContent:
+                                            "center",
+
+                                        background:
+                                            locationCaptured
+                                                ? "#dcfce7"
+                                                : "var(--nt-red-soft)",
+
+                                        color:
+                                            locationCaptured
+                                                ? "#16803C"
+                                                : "var(--nt-red)",
+                                    }}
+                                >
+
+                                    {locationCaptured ? (
+                                        <Check
+                                            size={21}
+                                        />
+                                    ) : (
+                                        <LocateFixed
+                                            size={21}
+                                        />
+                                    )}
+
+                                </div>
+
+
+                                <div
+                                    style={{
+                                        flex:
+                                            1,
+                                    }}
+                                >
+
+                                    <div
+                                        style={{
+                                            fontWeight:
+                                                800,
+
+                                            fontSize:
+                                                "1rem",
+
+                                            color:
+                                                "var(--nt-text)",
+                                        }}
+                                    >
+                                        {locationCaptured
+                                            ? "Location captured"
+                                            : "Register the Spot's exact location"}
+                                    </div>
+
+
+                                    <p
+                                        style={{
+                                            margin:
+                                                "5px 0 0",
+
+                                            color:
+                                                "var(--nt-muted)",
+
+                                            fontSize:
+                                                "0.82rem",
+
+                                            lineHeight:
+                                                1.5,
+                                        }}
+                                    >
+                                        {locationCaptured
+                                            ? "This Spot will be registered using your GPS coordinates. This is the location used for nearby searches."
+                                            : "You must be physically at the Spot. Turn on your device location and capture the Spot's exact position."}
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+
+                            {/* =================================================
+                                GPS BUTTON
+                            ================================================== */}
+
+                            <button
+                                type="button"
+                                onClick={
+                                    captureCurrentLocation
+                                }
+                                disabled={
+                                    locating ||
+                                    loading
+                                }
+                                style={{
+                                    width:
+                                        "100%",
+
+                                    marginTop:
+                                        "15px",
+
+                                    minHeight:
+                                        "48px",
+
+                                    display:
+                                        "flex",
+
+                                    alignItems:
+                                        "center",
+
+                                    justifyContent:
+                                        "center",
+
+                                    gap:
+                                        "8px",
+
+                                    padding:
+                                        "11px 14px",
+
+                                    border:
+                                        locationCaptured
+                                            ? "1px solid #16803C"
+                                            : "none",
+
+                                    borderRadius:
+                                        "var(--nt-radius-md)",
+
+                                    background:
+                                        locationCaptured
+                                            ? "#ffffff"
+                                            : "var(--nt-red)",
+
+                                    color:
+                                        locationCaptured
+                                            ? "#16803C"
+                                            : "#ffffff",
+
+                                    fontWeight:
+                                        800,
+
+                                    cursor:
+                                        locating ||
+                                            loading
+                                            ? "not-allowed"
+                                            : "pointer",
+
+                                    opacity:
+                                        locating ||
+                                            loading
+                                            ? 0.7
+                                            : 1,
+                                }}
+                            >
+
+                                {locating ? (
+                                    <>
+                                        <span
+                                            className="nt-loading-spinner"
+                                            style={{
+                                                width:
+                                                    "18px",
+
+                                                height:
+                                                    "18px",
+
+                                                borderWidth:
+                                                    "2px",
+
+                                                borderColor:
+                                                    locationCaptured
+                                                        ? "rgba(22,128,60,0.25)"
+                                                        : "rgba(255,255,255,0.35)",
+
+                                                borderTopColor:
+                                                    locationCaptured
+                                                        ? "#16803C"
+                                                        : "#FFFFFF",
+                                            }}
+                                        />
+
+                                        Getting your location...
+
+                                    </>
+                                ) : (
+                                    <>
+                                        {locationCaptured ? (
+                                            <Navigation
+                                                size={
+                                                    17
+                                                }
+                                            />
+                                        ) : (
+                                            <LocateFixed
+                                                size={
+                                                    17
+                                                }
+                                            />
+                                        )}
+
+                                        {locationCaptured
+                                            ? "Update My Current Location"
+                                            : "Use My Current Location"}
+
+                                    </>
+                                )}
+
+                            </button>
+
+
+                            {/* =================================================
+                                CAPTURED GPS DETAILS
+                            ================================================== */}
+
+                            {locationCaptured && (
+                                <div
+                                    style={{
+                                        marginTop:
+                                            "12px",
+
+                                        display:
+                                            "grid",
+
+                                        gridTemplateColumns:
+                                            "repeat(2, minmax(0, 1fr))",
+
+                                        gap:
+                                            "8px",
+                                    }}
+                                >
+
+                                    <div
+                                        style={{
+                                            padding:
+                                                "9px",
+
+                                            borderRadius:
+                                                "9px",
+
+                                            background:
+                                                "#ffffff",
+
+                                            border:
+                                                "1px solid #dcfce7",
+                                        }}
+                                    >
+
+                                        <div
+                                            style={{
+                                                fontSize:
+                                                    "0.68rem",
+
+                                                color:
+                                                    "#6b7280",
+
+                                                fontWeight:
+                                                    700,
+
+                                                textTransform:
+                                                    "uppercase",
+                                            }}
+                                        >
+                                            Latitude
+                                        </div>
+
+
+                                        <div
+                                            style={{
+                                                marginTop:
+                                                    "3px",
+
+                                                fontSize:
+                                                    "0.78rem",
+
+                                                fontWeight:
+                                                    700,
+
+                                                wordBreak:
+                                                    "break-all",
+                                            }}
+                                        >
+                                            {
+                                                Number(
+                                                    location.latitude
+                                                ).toFixed(
+                                                    6
+                                                )
+                                            }
+                                        </div>
+
+                                    </div>
+
+
+                                    <div
+                                        style={{
+                                            padding:
+                                                "9px",
+
+                                            borderRadius:
+                                                "9px",
+
+                                            background:
+                                                "#ffffff",
+
+                                            border:
+                                                "1px solid #dcfce7",
+                                        }}
+                                    >
+
+                                        <div
+                                            style={{
+                                                fontSize:
+                                                    "0.68rem",
+
+                                                color:
+                                                    "#6b7280",
+
+                                                fontWeight:
+                                                    700,
+
+                                                textTransform:
+                                                    "uppercase",
+                                            }}
+                                        >
+                                            Longitude
+                                        </div>
+
+
+                                        <div
+                                            style={{
+                                                marginTop:
+                                                    "3px",
+
+                                                fontSize:
+                                                    "0.78rem",
+
+                                                fontWeight:
+                                                    700,
+
+                                                wordBreak:
+                                                    "break-all",
+                                            }}
+                                        >
+                                            {
+                                                Number(
+                                                    location.longitude
+                                                ).toFixed(
+                                                    6
+                                                )
+                                            }
+                                        </div>
+
+                                    </div>
+
+
+                                    <div
+                                        style={{
+                                            gridColumn:
+                                                "1 / -1",
+
+                                            padding:
+                                                "9px",
+
+                                            borderRadius:
+                                                "9px",
+
+                                            background:
+                                                "#ffffff",
+
+                                            border:
+                                                "1px solid #dcfce7",
+                                        }}
+                                    >
+
+                                        <div
+                                            style={{
+                                                fontSize:
+                                                    "0.68rem",
+
+                                                color:
+                                                    "#6b7280",
+
+                                                fontWeight:
+                                                    700,
+
+                                                textTransform:
+                                                    "uppercase",
+                                            }}
+                                        >
+                                            GPS Accuracy
+                                        </div>
+
+
+                                        <div
+                                            style={{
+                                                marginTop:
+                                                    "3px",
+
+                                                fontSize:
+                                                    "0.82rem",
+
+                                                fontWeight:
+                                                    800,
+
+                                                color:
+                                                    "#16803C",
+                                            }}
+                                        >
+                                            {Number.isFinite(
+                                                Number(
+                                                    location.accuracy
+                                                )
+                                            )
+                                                ? `±${Math.round(
+                                                    Number(
+                                                        location.accuracy
+                                                    )
+                                                )} metres`
+                                                : "Good GPS position"}
+                                        </div>
+
+                                    </div>
+
+                                </div>
+                            )}
+
+
+                            {/* =================================================
+                                GPS ERROR
+                            ================================================== */}
+
+                            {locationError && (
+                                <div
+                                    role="alert"
+                                    style={{
+                                        marginTop:
+                                            "10px",
+
+                                        padding:
+                                            "10px 12px",
+
+                                        borderRadius:
+                                            "10px",
+
+                                        background:
+                                            "#fef2f2",
+
+                                        color:
+                                            "#991b1b",
+
+                                        fontSize:
+                                            "0.78rem",
+
+                                        lineHeight:
+                                            1.45,
+                                    }}
+                                >
+                                    {locationError}
+                                </div>
+                            )}
+
+                        </section>
+
+
+                        {/* =================================================
                             NEIGHBORHOOD
                         ================================================== */}
 
@@ -695,8 +1571,6 @@ export default function IntroducePage() {
                                 "approximateSpendPlaceholder"
                             )}
                         />
-
-
                         {/* =================================================
                             PHONE
                         ================================================== */}
@@ -854,15 +1728,79 @@ export default function IntroducePage() {
 
 
                         {/* =================================================
+                            LOCATION REMINDER
+                        ================================================== */}
+
+                        {!locationCaptured && (
+                            <div
+                                style={{
+                                    padding:
+                                        "12px 14px",
+
+                                    borderRadius:
+                                        "10px",
+
+                                    background:
+                                        "var(--nt-red-soft)",
+
+                                    color:
+                                        "var(--nt-red)",
+
+                                    fontSize:
+                                        "0.8rem",
+
+                                    lineHeight:
+                                        1.5,
+
+                                    fontWeight:
+                                        600,
+                                }}
+                            >
+                                <MapPin
+                                    size={
+                                        15
+                                    }
+                                    style={{
+                                        verticalAlign:
+                                            "middle",
+
+                                        marginRight:
+                                            "5px",
+                                    }}
+                                />
+
+                                Please capture your current
+                                GPS location before submitting
+                                this Spot.
+                            </div>
+                        )}
+
+
+                        {/* =================================================
                             SUBMIT
                         ================================================== */}
 
                         <button
                             type="submit"
                             disabled={
-                                loading
+                                loading ||
+                                locating ||
+                                !locationCaptured
                             }
                             className="nt-introduce-primary"
+                            style={{
+                                opacity:
+                                    !locationCaptured
+                                        ? 0.55
+                                        : 1,
+
+                                cursor:
+                                    !locationCaptured ||
+                                        loading ||
+                                        locating
+                                        ? "not-allowed"
+                                        : "pointer",
+                            }}
                         >
 
                             {loading ? (
@@ -872,12 +1810,16 @@ export default function IntroducePage() {
                                         style={{
                                             width:
                                                 "18px",
+
                                             height:
                                                 "18px",
+
                                             borderWidth:
                                                 "2px",
+
                                             borderColor:
                                                 "rgba(255,255,255,0.35)",
+
                                             borderTopColor:
                                                 "#FFFFFF",
                                         }}
@@ -896,7 +1838,9 @@ export default function IntroducePage() {
                                     </span>
 
                                     <Send
-                                        size={17}
+                                        size={
+                                            17
+                                        }
                                     />
                                 </>
                             )}
@@ -912,12 +1856,16 @@ export default function IntroducePage() {
                             style={{
                                 margin:
                                     "12px 0 0",
+
                                 textAlign:
                                     "center",
+
                                 color:
                                     "var(--nt-muted)",
+
                                 fontSize:
                                     "0.75rem",
+
                                 lineHeight:
                                     "1.5",
                             }}
@@ -926,6 +1874,7 @@ export default function IntroducePage() {
                                 "introduceReviewNote"
                             )}
                         </p>
+
 
                     </form>
 
@@ -963,21 +1912,31 @@ function FormInput({
                         *
                     </span>
                 )}
+
             </label>
 
 
             <input
-                type={type}
-                value={value}
+                type={
+                    type
+                }
+
+                value={
+                    value
+                }
+
                 placeholder={
                     placeholder
                 }
+
                 required={
                     required
                 }
+
                 min={
                     min
                 }
+
                 onChange={event =>
                     onChange(
                         event
